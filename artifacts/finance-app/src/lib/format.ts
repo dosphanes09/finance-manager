@@ -1,9 +1,4 @@
-export function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-}
+export { formatCurrency } from "@workspace/finance-format";
 
 export function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {

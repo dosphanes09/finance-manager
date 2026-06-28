@@ -228,6 +228,14 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
   const typeKey = keys.find((k) => k === "type" || k === "dr/cr" || k === "debit/credit" || k.includes("transaction type") || k.includes("islem tipi"));
   const creditKey = keys.find((k) => k === "credit" || k === "credits" || k.includes("credit amount") || k.includes("alacak"));
   const debitKey = keys.find((k) => k === "debit" || k === "debits" || k.includes("debit amount") || k.includes("borc"));
+  const currencyKey = keys.find((k) =>
+    k === "currency" ||
+    k === "ccy" ||
+    k.includes("currency") ||
+    k.includes("para birimi") ||
+    k.includes("doviz") ||
+    k.includes("döviz")
+  );
 
   const results: ParsedTransaction[] = [];
 
@@ -250,6 +258,7 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
 
     let amount = 0;
     let type: "debit" | "credit" = "debit";
+    let rawAmountForCurrency = "";
 
     if (creditKey && debitKey) {
       const creditVal = get(creditKey);
@@ -257,20 +266,28 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
       if (creditVal && parseAmount(creditVal) > 0) {
         amount = parseAmount(creditVal);
         type = "credit";
+        rawAmountForCurrency = creditVal;
       } else if (debitVal) {
         amount = parseAmount(debitVal);
         type = "debit";
+        rawAmountForCurrency = debitVal;
       }
     } else {
       const rawAmount = get(amountKey);
       amount = parseAmount(rawAmount);
       const rawType = typeKey ? get(typeKey) : "";
       type = detectType(rawAmount, `${rawType} ${description}`);
+      rawAmountForCurrency = rawAmount;
     }
 
     if (amount === 0) continue;
 
     const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, type);
+    const currency = detectStructuredCurrency({
+      explicitCurrency: currencyKey ? get(currencyKey) : "",
+      rawAmount: rawAmountForCurrency,
+      description,
+    });
 
     results.push({
       date,
@@ -278,7 +295,7 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
       description,
       amount,
       type,
-      currency: "TRY",
+      currency,
       transactionType: type,
       transactionKind,
       balance: null,
@@ -295,6 +312,29 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
   }
 
   return results;
+}
+
+function detectStructuredCurrency(input: {
+  explicitCurrency: string;
+  rawAmount: string;
+  description: string;
+}): string {
+  const explicit = detectCurrencyCode(input.explicitCurrency);
+  if (explicit) return explicit;
+
+  const fromAmount = detectCurrencyCode(input.rawAmount);
+  if (fromAmount) return fromAmount;
+
+  return detectCurrencyCode(input.description) ?? "TRY";
+}
+
+function detectCurrencyCode(value: string): string | null {
+  const normalized = normalizeForMatching(value);
+  if (/\b(?:try|tl|turk lirasi|turkish lira)\b/.test(normalized) || value.includes("\u20ba")) return "TRY";
+  if (/\b(?:usd|dolar|dollar)\b/.test(normalized)) return "USD";
+  if (/\b(?:eur|euro|avro)\b/.test(normalized)) return "EUR";
+  if (/\b(?:gbp|sterlin|pound)\b/.test(normalized)) return "GBP";
+  return null;
 }
 
 export async function parseCsv(filePath: string): Promise<ParsedTransaction[]> {

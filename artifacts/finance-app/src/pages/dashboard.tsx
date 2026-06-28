@@ -135,7 +135,7 @@ export default function Dashboard() {
                     <BarChart data={d.topMerchants.filter((m) => m.amount > 0).slice(0, 8)}
                       layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v) => `$${v}`} tick={{ fontSize: 11 }} />
+                      <XAxis type="number" tickFormatter={(v) => formatCurrency(Number(v))} tick={{ fontSize: 11 }} />
                       <YAxis dataKey="merchant" type="category" width={85} tick={{ fontSize: 11 }} />
                       <RechartsTooltip formatter={(v: number) => formatCurrency(v)}
                         contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }} />
@@ -154,7 +154,7 @@ export default function Dashboard() {
                     <LineChart data={d.monthlyTrends} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
                       <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                      <YAxis tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12 }} />
+                      <YAxis tickFormatter={(v) => formatCurrency(Number(v))} tick={{ fontSize: 12 }} />
                       <RechartsTooltip formatter={(v: number) => formatCurrency(v)}
                         contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }} />
                       <Legend />
@@ -190,7 +190,7 @@ export default function Dashboard() {
                       <p className="text-xs text-muted-foreground">{formatDate(t.date)}</p>
                     </div>
                     <span className={`text-sm font-mono font-medium ml-3 shrink-0 ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                      {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}
+                      {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
                     </span>
                   </div>
                 ))}

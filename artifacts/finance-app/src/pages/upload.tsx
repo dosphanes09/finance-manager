@@ -328,7 +328,7 @@ export default function Upload() {
                         </div>
                       </TableCell>
                       <TableCell className={`text-right text-sm font-mono font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                        {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}
+                        {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
                       </TableCell>
                     </TableRow>
                   ))}

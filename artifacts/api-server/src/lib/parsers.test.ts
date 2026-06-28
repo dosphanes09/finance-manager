@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { parseCsv, parsePdfText, StatementParseError } from "./parsers";
+import * as XLSX from "xlsx";
+import { parseCsv, parseExcel, parsePdfText, StatementParseError } from "./parsers";
 import { detectBank, normalizeMerchant } from "./statement-parsers";
 import { inferTransactionKind } from "./statement-parsers/text-utils";
 
@@ -168,6 +169,32 @@ describe("parsePdfText", () => {
       assert.equal(rows[0].type, "credit");
       assert.equal(rows[0].transactionKind, "salary");
       assert.equal(rows[0].category, "income");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults Excel imports without a currency column to TRY", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "financeanalyzerpro-xlsx-"));
+    const filePath = path.join(dir, "statement.xlsx");
+
+    try {
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet([
+        {
+          Date: "2026-06-01",
+          Description: "MIGROS TICARET A.S.",
+          Amount: "1250.50",
+        },
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Transactions");
+      await fs.writeFile(filePath, XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+
+      const rows = await parseExcel(filePath);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].amount, 1250.5);
+      assert.equal(rows[0].currency, "TRY");
+      assert.equal(rows[0].merchant, "Migros");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc, sql } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
 import { GetInsightsQueryParams, GetInsightsResponse } from "@workspace/api-zod";
+import { formatCurrency } from "@workspace/finance-format";
 
 const router: IRouter = Router();
 
@@ -175,7 +176,7 @@ function buildSummary(
   savingsRate: number,
   mom: MonthOverMonth[]
 ): string {
-  const fmt = (n: number) => `$${n.toFixed(0)}`;
+  const fmt = (n: number) => formatCurrency(n);
   const biggestIncrease = mom.filter((m) => m.change > 0).sort((a, b) => b.change - a.change)[0];
 
   let summary = `In ${month}, your total income was ${fmt(income)} and expenses were ${fmt(expenses)}.`;

@@ -9,6 +9,9 @@ function serializeTransaction(t: typeof transactionsTable.$inferSelect) {
   return {
     ...t,
     amount: parseFloat(t.amount),
+    balance: t.balance === null ? null : parseFloat(t.balance),
+    categorizationConfidence: parseFloat(t.categorizationConfidence),
+    importConfidence: parseFloat(t.importConfidence),
     createdAt: t.createdAt.toISOString(),
   };
 }

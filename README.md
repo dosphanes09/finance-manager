@@ -372,6 +372,8 @@ The import pipeline is deterministic first:
 6. Categorize with user rules, persistent merchant memory, parser merchant rules, and built-in deterministic rules.
 7. Use the optional LLM fallback only when enabled and deterministic confidence is below `LLM_CATEGORIZATION_CONFIDENCE_THRESHOLD`.
 
+Currency defaults to Turkish Lira (`TRY`). CSV and Excel imports without a currency column are stored as `TRY`; decimal numbers alone never imply USD. If an uploaded file explicitly contains `USD`, `EUR`, `GBP`, `TL`, `TRY`, or a currency column/value, the parser preserves that explicit currency. UI amounts are formatted centrally with Turkish locale (`tr-TR`) using `formatCurrency(amount, currency = "TRY", locale = "tr-TR")`.
+
 Detected Turkish bank profiles:
 
 | Bank | Current support |

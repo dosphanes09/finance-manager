@@ -591,7 +591,7 @@ export default function Transactions() {
                     </div>
                   </TableCell>
                   <TableCell className={`text-right font-mono text-sm font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                    {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}
+                    {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
@@ -828,7 +828,12 @@ export default function Transactions() {
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Amount</span>
                   <span className={`font-mono font-medium ${currentReviewTransaction.type === "credit" ? "text-emerald-600" : ""}`}>
-                    {currentReviewTransaction.type === "credit" ? "+" : ""}{formatCurrency(currentReviewTransaction.amount)}
+                    {formatCurrency(
+                      currentReviewTransaction.type === "credit"
+                        ? currentReviewTransaction.amount
+                        : -currentReviewTransaction.amount,
+                      currentReviewTransaction.currency,
+                    )}
                   </span>
                 </div>
                 <div>
