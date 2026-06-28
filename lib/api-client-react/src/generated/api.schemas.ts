@@ -54,6 +54,7 @@ export interface Transaction {
   month: string;
   /** @nullable */
   notes?: string | null;
+  reviewed: boolean;
   createdAt: string;
 }
 
@@ -65,6 +66,7 @@ export interface TransactionList {
 export interface TransactionUpdate {
   category?: string;
   notes?: string;
+  reviewed?: boolean;
 }
 
 export interface BulkCategorizeRequest {
@@ -73,6 +75,15 @@ export interface BulkCategorizeRequest {
 }
 
 export interface BulkCategorizeResult {
+  updated: number;
+}
+
+export interface BulkReviewTransactionsRequest {
+  ids: number[];
+  reviewed: boolean;
+}
+
+export interface BulkReviewTransactionsResult {
   updated: number;
 }
 
@@ -236,6 +247,10 @@ export interface CreateRulesFromTransactionsResult {
 export interface RuleApplicationResult {
   scanned: number;
   updated: number;
+}
+
+export interface ApplyRulesToSelectedTransactionsRequest {
+  transactionIds: number[];
 }
 
 export interface MonthComparison {

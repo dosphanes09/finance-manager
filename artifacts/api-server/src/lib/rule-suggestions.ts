@@ -16,6 +16,7 @@ export interface TransactionForRuleAnalysis {
   amount: string | number;
   type?: string;
   category: string;
+  reviewed?: boolean;
 }
 
 export interface RuleSuggestion {
@@ -227,12 +228,29 @@ export function categorizeTransactionsWithRules(
 }
 
 export function needsRuleReview(transaction: TransactionForRuleAnalysis): boolean {
+  if (transaction.reviewed) return false;
+
   const suggested = normalizeMerchant(`${transaction.merchant} ${transaction.description}`);
   const suggestedCategory = suggested.category !== "other"
     ? suggested.category
     : categorizeBuiltIn(transaction.merchant, transaction.description);
+  const normalizedMerchant = normalizeCategorizationText(transaction.merchant);
+  const normalizedDescription = normalizeCategorizationText(transaction.description);
+  const isGenericMerchant = [
+    "card payment",
+    "transaction",
+    "payment",
+    "kart odeme",
+    "odeme",
+  ].some((generic) => normalizedMerchant.includes(generic) || normalizedDescription === generic);
+  const isLowConfidence = suggested.confidence < 0.65;
 
-  return transaction.category === "other" || (suggestedCategory !== "other" && suggestedCategory !== transaction.category);
+  return (
+    transaction.category === "other" ||
+    isGenericMerchant ||
+    isLowConfidence ||
+    (suggestedCategory !== "other" && suggestedCategory !== transaction.category)
+  );
 }
 
 function chooseRulePattern(merchant: string, matchedPattern?: string): string {

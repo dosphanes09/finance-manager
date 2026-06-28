@@ -53,6 +53,7 @@ export const UploadStatementResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })),
   "skipped": zod.number()
@@ -112,6 +113,7 @@ export const ConfirmUploadResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })),
   "skipped": zod.number()
@@ -148,6 +150,7 @@ export const ListTransactionsResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })),
   "total": zod.number()
@@ -175,6 +178,19 @@ export const BulkCategorizeResponse = zod.object({
 
 
 /**
+ * @summary Mark multiple transactions as reviewed or needing review
+ */
+export const BulkReviewTransactionsBody = zod.object({
+  "ids": zod.array(zod.number()),
+  "reviewed": zod.boolean()
+})
+
+export const BulkReviewTransactionsResponse = zod.object({
+  "updated": zod.number()
+})
+
+
+/**
  * @summary Update a transaction category or notes
  */
 export const UpdateTransactionParams = zod.object({
@@ -183,7 +199,8 @@ export const UpdateTransactionParams = zod.object({
 
 export const UpdateTransactionBody = zod.object({
   "category": zod.string().optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "reviewed": zod.boolean().optional()
 })
 
 export const UpdateTransactionResponse = zod.object({
@@ -196,6 +213,7 @@ export const UpdateTransactionResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })
 
@@ -250,6 +268,7 @@ export const GetDashboardResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })),
   "biggestExpenses": zod.array(zod.object({
@@ -262,6 +281,7 @@ export const GetDashboardResponse = zod.object({
   "category": zod.string(),
   "month": zod.string(),
   "notes": zod.string().nullish(),
+  "reviewed": zod.boolean(),
   "createdAt": zod.string()
 })),
   "recurringPayments": zod.array(zod.object({
@@ -438,6 +458,19 @@ export const CreateRulesFromTransactionsResponse = zod.object({
  * @summary Re-categorize existing transactions using current rules
  */
 export const ApplyRulesToExistingTransactionsResponse = zod.object({
+  "scanned": zod.number(),
+  "updated": zod.number()
+})
+
+
+/**
+ * @summary Re-categorize selected transactions using current rules
+ */
+export const ApplyRulesToSelectedTransactionsBody = zod.object({
+  "transactionIds": zod.array(zod.number())
+})
+
+export const ApplyRulesToSelectedTransactionsResponse = zod.object({
   "scanned": zod.number(),
   "updated": zod.number()
 })

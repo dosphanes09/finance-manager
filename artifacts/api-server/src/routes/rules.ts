@@ -12,6 +12,8 @@ import {
   CreateRulesFromTransactionsBody,
   CreateRulesFromTransactionsResponse,
   ApplyRulesToExistingTransactionsResponse,
+  ApplyRulesToSelectedTransactionsBody,
+  ApplyRulesToSelectedTransactionsResponse,
 } from "@workspace/api-zod";
 import {
   buildRuleDraftsFromTransactions,
@@ -47,6 +49,7 @@ router.get("/rules/suggestions", async (_req, res): Promise<void> => {
         description: transactionsTable.description,
         amount: transactionsTable.amount,
         category: transactionsTable.category,
+        reviewed: transactionsTable.reviewed,
       })
       .from(transactionsTable),
     db
@@ -81,6 +84,7 @@ router.post("/rules/draft", async (req, res): Promise<void> => {
       description: transactionsTable.description,
       amount: transactionsTable.amount,
       category: transactionsTable.category,
+      reviewed: transactionsTable.reviewed,
     })
     .from(transactionsTable)
     .where(inArray(transactionsTable.id, transactionIds));
@@ -107,6 +111,7 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
       description: transactionsTable.description,
       amount: transactionsTable.amount,
       category: transactionsTable.category,
+      reviewed: transactionsTable.reviewed,
     })
     .from(transactionsTable);
 
@@ -151,7 +156,7 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
 
     const rows = await db
       .update(transactionsTable)
-      .set({ category })
+      .set({ category, reviewed: true })
       .where(inArray(transactionsTable.id, idList))
       .returning({ id: transactionsTable.id });
 
@@ -175,6 +180,7 @@ router.post("/rules/apply", async (_req, res): Promise<void> => {
         description: transactionsTable.description,
         amount: transactionsTable.amount,
         category: transactionsTable.category,
+        reviewed: transactionsTable.reviewed,
       })
       .from(transactionsTable),
     db
@@ -199,7 +205,7 @@ router.post("/rules/apply", async (_req, res): Promise<void> => {
   for (const [category, ids] of updatesByCategory.entries()) {
     const rows = await db
       .update(transactionsTable)
-      .set({ category })
+      .set({ category, reviewed: true })
       .where(inArray(transactionsTable.id, ids))
       .returning({ id: transactionsTable.id });
     updated += rows.length;
@@ -207,6 +213,67 @@ router.post("/rules/apply", async (_req, res): Promise<void> => {
 
   res.json(
     ApplyRulesToExistingTransactionsResponse.parse({
+      scanned: transactions.length,
+      updated,
+    }),
+  );
+});
+
+router.post("/rules/apply-selected", async (req, res): Promise<void> => {
+  const body = ApplyRulesToSelectedTransactionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const transactionIds = [...new Set(body.data.transactionIds)];
+  if (transactionIds.length === 0) {
+    res.json(ApplyRulesToSelectedTransactionsResponse.parse({ scanned: 0, updated: 0 }));
+    return;
+  }
+
+  const [transactions, rules] = await Promise.all([
+    db
+      .select({
+        id: transactionsTable.id,
+        merchant: transactionsTable.merchant,
+        description: transactionsTable.description,
+        amount: transactionsTable.amount,
+        category: transactionsTable.category,
+        reviewed: transactionsTable.reviewed,
+      })
+      .from(transactionsTable)
+      .where(inArray(transactionsTable.id, transactionIds)),
+    db
+      .select({
+        pattern: categorizationRulesTable.pattern,
+        category: categorizationRulesTable.category,
+      })
+      .from(categorizationRulesTable)
+      .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
+  ]);
+
+  const updates = categorizeTransactionsWithRules(transactions, rules);
+  const updatesByCategory = new Map<string, number[]>();
+
+  for (const update of updates) {
+    const ids = updatesByCategory.get(update.category) ?? [];
+    ids.push(update.id);
+    updatesByCategory.set(update.category, ids);
+  }
+
+  let updated = 0;
+  for (const [category, ids] of updatesByCategory.entries()) {
+    const rows = await db
+      .update(transactionsTable)
+      .set({ category, reviewed: true })
+      .where(inArray(transactionsTable.id, ids))
+      .returning({ id: transactionsTable.id });
+    updated += rows.length;
+  }
+
+  res.json(
+    ApplyRulesToSelectedTransactionsResponse.parse({
       scanned: transactions.length,
       updated,
     }),

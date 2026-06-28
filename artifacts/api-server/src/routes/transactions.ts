@@ -12,6 +12,8 @@ import {
   ListMonthsResponse,
   BulkCategorizeBody,
   BulkCategorizeResponse,
+  BulkReviewTransactionsBody,
+  BulkReviewTransactionsResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -87,6 +89,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
       amount: row.amount,
       type: row.type,
       category: row.category,
+      reviewed: row.reviewed,
     }));
 
     res.json(
@@ -136,11 +139,34 @@ router.post("/transactions/bulk-categorize", async (req, res): Promise<void> => 
 
   const updated = await db
     .update(transactionsTable)
-    .set({ category })
+    .set({ category, reviewed: true })
     .where(inArray(transactionsTable.id, ids))
     .returning({ id: transactionsTable.id });
 
   res.json(BulkCategorizeResponse.parse({ updated: updated.length }));
+});
+
+router.post("/transactions/bulk-review", async (req, res): Promise<void> => {
+  const body = BulkReviewTransactionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const { ids, reviewed } = body.data;
+
+  if (ids.length === 0) {
+    res.json(BulkReviewTransactionsResponse.parse({ updated: 0 }));
+    return;
+  }
+
+  const updated = await db
+    .update(transactionsTable)
+    .set({ reviewed })
+    .where(inArray(transactionsTable.id, ids))
+    .returning({ id: transactionsTable.id });
+
+  res.json(BulkReviewTransactionsResponse.parse({ updated: updated.length }));
 });
 
 router.patch("/transactions/:id", async (req, res): Promise<void> => {
@@ -158,8 +184,12 @@ router.patch("/transactions/:id", async (req, res): Promise<void> => {
   }
 
   const update: Partial<typeof transactionsTable.$inferInsert> = {};
-  if (body.data.category !== undefined) update.category = body.data.category;
+  if (body.data.category !== undefined) {
+    update.category = body.data.category;
+    update.reviewed = true;
+  }
   if (body.data.notes !== undefined) update.notes = body.data.notes;
+  if (body.data.reviewed !== undefined) update.reviewed = body.data.reviewed;
 
   if (Object.keys(update).length === 0) {
     res.status(400).json({ error: "No fields to update" });

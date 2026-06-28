@@ -5,6 +5,7 @@ import {
   buildRuleSuggestions,
   buildRuleDraftsFromTransactions,
   categorizeTransactionsWithRules,
+  needsRuleReview,
   suggestRulePattern,
   type TransactionForRuleAnalysis,
 } from "./rule-suggestions";
@@ -106,5 +107,32 @@ describe("rule suggestions", () => {
 
     const merchantNames = drafts.map((draft) => draft.normalizedMerchant);
     assert.deepEqual(merchantNames.sort(), ["Migros", "Obilet", "Spotify"]);
+  });
+
+  it("flags only unreviewed ambiguous transactions for review", () => {
+    assert.equal(needsRuleReview({
+      id: 20,
+      merchant: "Card Payment",
+      description: "CARD PAYMENT 123456",
+      amount: "100.00",
+      category: "shopping",
+    }), true);
+
+    assert.equal(needsRuleReview({
+      id: 21,
+      merchant: "MIGROS TICARET A.S.",
+      description: "MIGROS TICARET A.S.",
+      amount: "100.00",
+      category: "other",
+    }), true);
+
+    assert.equal(needsRuleReview({
+      id: 22,
+      merchant: "Card Payment",
+      description: "CARD PAYMENT 123456",
+      amount: "100.00",
+      category: "shopping",
+      reviewed: true,
+    }), false);
   });
 });

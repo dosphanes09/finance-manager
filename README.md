@@ -8,10 +8,10 @@ A full-stack personal finance analytics platform. Upload CSV, Excel, or PDF bank
 
 - **Upload** CSV / Excel (.xlsx/.xls) / PDF bank statements with a two-step preview flow (review before saving, duplicate detection)
 - **Dashboard** — monthly KPIs, spending pie chart, top merchants bar chart, income vs expenses trend line, recent transactions, biggest expenses, recurring payment detection
-- **Transactions** — sortable columns, search & filter, bulk categorise, inline notes editing, Export CSV
+- **Transactions** — sortable columns, search/filter, merchant + original description columns, inline category editing, quick review, bulk categorise/review, inline notes, Export CSV
 - **Budgets** — set monthly limits per category with real-time progress bars and over-budget warnings
 - **Insights** — financial health score, month-over-month comparison, recurring payments, savings opportunity tips
-- **Categories & Rules** — 12 built-in categories; create custom keyword→category rules stored in the database (applied before built-ins on next import)
+- **Categories & Rules** — 12 built-in categories; create custom keyword→category rules manually, from transactions, or from suggestions (custom rules override built-ins)
 - **Settings** — load 6-month demo dataset, delete all data with confirmation, privacy information
 - **Mobile-responsive** — collapsible Sheet sidebar on small screens
 
@@ -138,7 +138,7 @@ The `.local` folder is ignored by git and must not be committed.
 pnpm --filter @workspace/db run push
 ```
 
-This creates three tables: `transactions`, `budgets`, `categorization_rules`.
+This creates three tables: `transactions`, `budgets`, `categorization_rules`. The `transactions` table includes a `reviewed` flag used by the Needs Review workflow.
 
 ### 5. Start the development servers
 
@@ -220,8 +220,8 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 │   │   │   │   ├── demo.ts         ← POST /api/demo  |  DELETE /api/data
 │   │   │   │   ├── health.ts       ← GET /api/healthz | /api/health/db
 │   │   │   │   ├── insights.ts     ← GET /api/insights
-│   │   │   │   ├── rules.ts        ← CRUD /api/rules
-│   │   │   │   ├── transactions.ts ← CRUD + /bulk-categorize
+│   │   │   │   ├── rules.ts        ← CRUD /api/rules + suggestions/apply endpoints
+│   │   │   │   ├── transactions.ts ← CRUD + bulk categorize/review
 │   │   │   │   └── upload.ts       ← POST /api/upload/preview | /confirm | /upload
 │   │   │   └── index.ts
 │   │   └── build.mjs               ← esbuild config (pdf-parse is external)
@@ -284,6 +284,17 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 Edit `artifacts/api-server/src/lib/categorizer.ts` — add keywords to `CATEGORY_RULES` or add a new category entry. The same file exports the `CATEGORIES` list consumed by the frontend.
 
 Users can also add custom rules from the **Categories & Rules** page — these are applied before the built-in rules on every import.
+
+### Transaction categorization workflow
+
+- On **Transactions**, change the category directly in the table. The transaction is saved immediately and then asks whether to remember the categorization.
+- Choose **No, only update this transaction** for a one-off fix.
+- Choose **Yes, create a rule for this merchant going forward** to save a custom rule without changing older matching transactions.
+- Choose **Yes, create a rule and apply it to all matching past transactions** to save the rule and recategorize historical matches.
+- The suggested rule pattern prefers the normalized merchant, then a cleaned description with dates, numbers, card references, authorization codes, installments, and amounts removed.
+- Use **Needs review** to focus on transactions categorized as `other`, low-confidence matches, or generic merchants such as card payments. **Quick review** steps through the current queue one transaction at a time.
+- Select multiple transactions to bulk change category, create grouped rules, apply existing rules to selected rows, or mark them reviewed.
+- Custom rules are deterministic and always run before built-in keyword rules. AI is not used for categorization.
 
 ### Running the full typecheck
 

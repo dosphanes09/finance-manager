@@ -6,8 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface TransactionUpdate {
-  category?: string;
-  notes?: string;
-  reviewed?: boolean;
+export interface ApplyRulesToSelectedTransactionsRequest {
+  transactionIds: number[];
 }

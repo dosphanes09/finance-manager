@@ -20,9 +20,12 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApplyRulesToSelectedTransactionsRequest,
   Budget,
   BulkCategorizeRequest,
   BulkCategorizeResult,
+  BulkReviewTransactionsRequest,
+  BulkReviewTransactionsResult,
   Category,
   ConfirmUploadRequest,
   CreateRuleRequest,
@@ -672,6 +675,76 @@ export const useBulkCategorize = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getBulkCategorizeMutationOptions(options));
+    }
+
+export const getBulkReviewTransactionsUrl = () => {
+
+
+
+
+  return `/api/transactions/bulk-review`
+}
+
+/**
+ * @summary Mark multiple transactions as reviewed or needing review
+ */
+export const bulkReviewTransactions = async (bulkReviewTransactionsRequest: BulkReviewTransactionsRequest, options?: RequestInit): Promise<BulkReviewTransactionsResult> => {
+
+  return customFetch<BulkReviewTransactionsResult>(getBulkReviewTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bulkReviewTransactionsRequest)
+  }
+);}
+
+
+
+
+export const getBulkReviewTransactionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkReviewTransactions>>, TError,{data: BodyType<BulkReviewTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkReviewTransactions>>, TError,{data: BodyType<BulkReviewTransactionsRequest>}, TContext> => {
+
+const mutationKey = ['bulkReviewTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkReviewTransactions>>, {data: BodyType<BulkReviewTransactionsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  bulkReviewTransactions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkReviewTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkReviewTransactions>>>
+    export type BulkReviewTransactionsMutationBody = BodyType<BulkReviewTransactionsRequest>
+    export type BulkReviewTransactionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Mark multiple transactions as reviewed or needing review
+ */
+export const useBulkReviewTransactions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkReviewTransactions>>, TError,{data: BodyType<BulkReviewTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkReviewTransactions>>,
+        TError,
+        {data: BodyType<BulkReviewTransactionsRequest>},
+        TContext
+      > => {
+      return useMutation(getBulkReviewTransactionsMutationOptions(options));
     }
 
 export const getUpdateTransactionUrl = (id: number,) => {
@@ -1637,6 +1710,76 @@ export const useApplyRulesToExistingTransactions = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getApplyRulesToExistingTransactionsMutationOptions(options));
+    }
+
+export const getApplyRulesToSelectedTransactionsUrl = () => {
+
+
+
+
+  return `/api/rules/apply-selected`
+}
+
+/**
+ * @summary Re-categorize selected transactions using current rules
+ */
+export const applyRulesToSelectedTransactions = async (applyRulesToSelectedTransactionsRequest: ApplyRulesToSelectedTransactionsRequest, options?: RequestInit): Promise<RuleApplicationResult> => {
+
+  return customFetch<RuleApplicationResult>(getApplyRulesToSelectedTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(applyRulesToSelectedTransactionsRequest)
+  }
+);}
+
+
+
+
+export const getApplyRulesToSelectedTransactionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>, TError,{data: BodyType<ApplyRulesToSelectedTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>, TError,{data: BodyType<ApplyRulesToSelectedTransactionsRequest>}, TContext> => {
+
+const mutationKey = ['applyRulesToSelectedTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>, {data: BodyType<ApplyRulesToSelectedTransactionsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  applyRulesToSelectedTransactions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyRulesToSelectedTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>>
+    export type ApplyRulesToSelectedTransactionsMutationBody = BodyType<ApplyRulesToSelectedTransactionsRequest>
+    export type ApplyRulesToSelectedTransactionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-categorize selected transactions using current rules
+ */
+export const useApplyRulesToSelectedTransactions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>, TError,{data: BodyType<ApplyRulesToSelectedTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyRulesToSelectedTransactions>>,
+        TError,
+        {data: BodyType<ApplyRulesToSelectedTransactionsRequest>},
+        TContext
+      > => {
+      return useMutation(getApplyRulesToSelectedTransactionsMutationOptions(options));
     }
 
 export const getDeleteRuleUrl = (id: number,) => {

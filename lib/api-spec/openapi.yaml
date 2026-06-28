@@ -214,6 +214,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/BulkCategorizeResult"
 
+  /transactions/bulk-review:
+    post:
+      operationId: bulkReviewTransactions
+      tags: [transactions]
+      summary: Mark multiple transactions as reviewed or needing review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkReviewTransactionsRequest"
+      responses:
+        "200":
+          description: Number of updated transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkReviewTransactionsResult"
+
   /transactions/{id}:
     patch:
       operationId: updateTransaction
@@ -477,6 +496,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/RuleApplicationResult"
 
+  /rules/apply-selected:
+    post:
+      operationId: applyRulesToSelectedTransactions
+      tags: [rules]
+      summary: Re-categorize selected transactions using current rules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyRulesToSelectedTransactionsRequest"
+      responses:
+        "200":
+          description: Number of selected transactions updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleApplicationResult"
+
   /rules/{id}:
     delete:
       operationId: deleteRule
@@ -623,9 +661,11 @@ components:
           type: string
         notes:
           type: ["string", "null"]
+        reviewed:
+          type: boolean
         createdAt:
           type: string
-      required: [id, date, merchant, description, amount, type, category, month, createdAt]
+      required: [id, date, merchant, description, amount, type, category, month, reviewed, createdAt]
 
     TransactionList:
       type: object
@@ -645,6 +685,8 @@ components:
           type: string
         notes:
           type: string
+        reviewed:
+          type: boolean
 
     BulkCategorizeRequest:
       type: object
@@ -658,6 +700,24 @@ components:
       required: [ids, category]
 
     BulkCategorizeResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required: [updated]
+
+    BulkReviewTransactionsRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+        reviewed:
+          type: boolean
+      required: [ids, reviewed]
+
+    BulkReviewTransactionsResult:
       type: object
       properties:
         updated:
@@ -985,6 +1045,15 @@ components:
         updated:
           type: integer
       required: [scanned, updated]
+
+    ApplyRulesToSelectedTransactionsRequest:
+      type: object
+      properties:
+        transactionIds:
+          type: array
+          items:
+            type: integer
+      required: [transactionIds]
 
     MonthComparison:
       type: object

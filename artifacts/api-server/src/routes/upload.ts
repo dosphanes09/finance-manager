@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
-import { db, transactionsTable } from "@workspace/db";
+import { categorizationRulesTable, db, transactionsTable } from "@workspace/db";
 import {
   parseCsv,
   parseExcel,
@@ -10,13 +10,13 @@ import {
   StatementParseError,
   type PdfParseOptions,
 } from "../lib/parsers";
-import { categorize } from "../lib/categorizer";
+import { categorize, matchCustomRule, type CustomRule } from "../lib/categorizer";
 import {
   UploadStatementResponse,
   PreviewStatementResponse,
   ConfirmUploadBody,
 } from "@workspace/api-zod";
-import { inArray } from "drizzle-orm";
+import { desc, inArray } from "drizzle-orm";
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
@@ -149,6 +149,32 @@ async function detectDuplicates(
   }
 }
 
+async function loadCustomRules(log?: Request["log"]): Promise<CustomRule[]> {
+  try {
+    return await db
+      .select({
+        pattern: categorizationRulesTable.pattern,
+        category: categorizationRulesTable.category,
+      })
+      .from(categorizationRulesTable)
+      .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt));
+  } catch (err) {
+    log?.warn({ err }, "Custom categorization rules unavailable; falling back to built-in categorization");
+    return [];
+  }
+}
+
+function categorizeImportedTransaction(
+  transaction: { merchant: string; description: string; category?: string | null },
+  customRules: CustomRule[],
+): string {
+  return (
+    matchCustomRule(transaction.merchant, transaction.description, customRules)?.category ??
+    transaction.category ??
+    categorize(transaction.merchant, transaction.description)
+  );
+}
+
 router.post("/upload/preview", upload.single("file"), async (req, res): Promise<void> => {
   const file = req.file;
   if (!file) {
@@ -168,7 +194,10 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
       return;
     }
 
-    const duplicateDetection = await detectDuplicates(parsed, req.log);
+    const [duplicateDetection, customRules] = await Promise.all([
+      detectDuplicates(parsed, req.log),
+      loadCustomRules(req.log),
+    ]);
     const existingKeys = duplicateDetection.existingKeys;
 
     const preview = parsed.map((t) => ({
@@ -180,7 +209,7 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
       currency: t.currency ?? "TRY",
       transactionType: t.transactionType ?? t.type,
       balance: t.balance ?? null,
-      category: t.category ?? categorize(t.merchant, t.description),
+      category: categorizeImportedTransaction(t, customRules),
       month: t.date.substring(0, 7),
       isDuplicate: existingKeys.has(
         `${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`
@@ -263,13 +292,14 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
       return;
     }
 
+    const customRules = await loadCustomRules(req.log);
     const toInsert = parsed.map((t) => ({
       date: t.date,
       merchant: t.merchant,
       description: t.description,
       amount: String(t.amount),
       type: t.type,
-      category: t.category ?? categorize(t.merchant, t.description),
+      category: categorizeImportedTransaction(t, customRules),
       month: t.date.substring(0, 7),
     }));
 

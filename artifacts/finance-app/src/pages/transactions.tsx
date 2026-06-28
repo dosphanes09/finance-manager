@@ -3,8 +3,10 @@ import {
   useListTransactions, getListTransactionsQueryKey,
   useUpdateTransaction, useDeleteTransaction, useListMonths,
   useListCategories, useBulkCategorize,
+  useBulkReviewTransactions,
   useCreateRuleDraftsFromTransactions,
   useCreateRulesFromTransactions,
+  useApplyRulesToSelectedTransactions,
   getListRulesQueryKey,
   getListRuleSuggestionsQueryKey,
   type RuleDraft,
@@ -20,12 +22,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Trash2, Search, Download, ChevronUp, ChevronDown, ChevronsUpDown, Tag, Wand2 } from "lucide-react";
+import { Trash2, Search, Download, ChevronUp, ChevronDown, ChevronsUpDown, Tag, Wand2, CheckCircle2, ListChecks } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type SortBy = "date" | "amount" | "category" | "merchant";
 type SortDir = "asc" | "desc";
+type RuleDialogMode = "create" | "remember";
 
 type RuleDraftEdit = {
   pattern: string;
@@ -52,10 +55,15 @@ export default function Transactions() {
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkCategory, setBulkCategory] = useState("");
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [ruleDialogMode, setRuleDialogMode] = useState<RuleDialogMode>("create");
   const [ruleDrafts, setRuleDrafts] = useState<RuleDraft[]>([]);
   const [ruleDraftEdits, setRuleDraftEdits] = useState<Record<string, RuleDraftEdit>>({});
   const [ruleSourceTransactions, setRuleSourceTransactions] = useState<Transaction[]>([]);
   const [editingNote, setEditingNote] = useState<{ id: number; value: string } | null>(null);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<number>>(new Set());
+  const [quickReviewOpen, setQuickReviewOpen] = useState(false);
+  const [quickReviewIndex, setQuickReviewIndex] = useState(0);
+  const [quickReviewCategory, setQuickReviewCategory] = useState("");
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -81,8 +89,10 @@ export default function Transactions() {
   const updateMutation = useUpdateTransaction();
   const deleteMutation = useDeleteTransaction();
   const bulkMutation = useBulkCategorize();
+  const bulkReviewMutation = useBulkReviewTransactions();
   const draftRuleMutation = useCreateRuleDraftsFromTransactions();
   const createRulesMutation = useCreateRulesFromTransactions();
+  const applySelectedRulesMutation = useApplyRulesToSelectedTransactions();
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: getListTransactionsQueryKey() });
@@ -102,8 +112,15 @@ export default function Transactions() {
   };
 
   const handleCategoryChange = (id: number, cat: string) => {
+    const transaction = transactions.find((item) => item.id === id);
+    if (transaction?.category === cat) return;
+
     updateMutation.mutate({ id, data: { category: cat } }, {
-      onSuccess: () => { invalidate(); toast({ title: "Category updated" }); },
+      onSuccess: () => {
+        invalidate();
+        toast({ title: "Category updated" });
+        openRuleDialog([id], { mode: "remember", categoryOverride: cat });
+      },
     });
   };
 
@@ -145,21 +162,64 @@ export default function Transactions() {
     });
   };
 
-  const buildInitialRuleEdits = (drafts: RuleDraft[]): Record<string, RuleDraftEdit> => {
+  const handleApplyRulesToSelected = () => {
+    if (selected.size === 0) return;
+
+    applySelectedRulesMutation.mutate(
+      { data: { transactionIds: Array.from(selected) } },
+      {
+        onSuccess: (result) => {
+          invalidate();
+          setSelected(new Set());
+          toast({
+            title: `Applied rules to ${result.updated} transaction${result.updated === 1 ? "" : "s"}`,
+            description: `${result.scanned} selected transaction${result.scanned === 1 ? "" : "s"} scanned`,
+          });
+        },
+        onError: () => toast({ variant: "destructive", title: "Failed to apply rules" }),
+      },
+    );
+  };
+
+  const handleMarkSelectedReviewed = () => {
+    if (selected.size === 0) return;
+
+    bulkReviewMutation.mutate(
+      { data: { ids: Array.from(selected), reviewed: true } },
+      {
+        onSuccess: (result) => {
+          invalidate();
+          setSelected(new Set());
+          toast({ title: `Marked ${result.updated} transaction${result.updated === 1 ? "" : "s"} reviewed` });
+        },
+        onError: () => toast({ variant: "destructive", title: "Failed to mark reviewed" }),
+      },
+    );
+  };
+
+  const buildInitialRuleEdits = (drafts: RuleDraft[], categoryOverride?: string): Record<string, RuleDraftEdit> => {
     return Object.fromEntries(
       drafts.map((draft) => {
         const currentNonOther = draft.currentCategories.find((item) => item.category !== "other")?.category;
-        const categoryValue = draft.suggestedCategory !== "other"
+        const categoryValue = categoryOverride ?? (draft.suggestedCategory !== "other"
           ? draft.suggestedCategory
-          : currentNonOther ?? "";
+          : currentNonOther ?? "");
 
         return [draft.groupKey, { pattern: draft.pattern, category: categoryValue }];
       }),
     );
   };
 
-  const openRuleDialog = (transactionIds: number[]) => {
-    const sourceTransactions = transactions.filter((transaction) => transactionIds.includes(transaction.id));
+  const openRuleDialog = (
+    transactionIds: number[],
+    options: { mode?: RuleDialogMode; categoryOverride?: string } = {},
+  ) => {
+    const sourceTransactions = transactions
+      .filter((transaction) => transactionIds.includes(transaction.id))
+      .map((transaction) => options.categoryOverride
+        ? { ...transaction, category: options.categoryOverride }
+        : transaction);
+
     draftRuleMutation.mutate(
       { data: { transactionIds } },
       {
@@ -171,7 +231,8 @@ export default function Transactions() {
 
           setRuleSourceTransactions(sourceTransactions);
           setRuleDrafts(drafts);
-          setRuleDraftEdits(buildInitialRuleEdits(drafts));
+          setRuleDraftEdits(buildInitialRuleEdits(drafts, options.categoryOverride));
+          setRuleDialogMode(options.mode ?? "create");
           setRuleDialogOpen(true);
         },
         onError: () => toast({ variant: "destructive", title: "Failed to prepare rule" }),
@@ -182,6 +243,11 @@ export default function Transactions() {
   const openSelectedRuleDialog = () => {
     if (selected.size === 0) return;
     openRuleDialog(Array.from(selected));
+  };
+
+  const handleRuleDialogOpenChange = (open: boolean) => {
+    setRuleDialogOpen(open);
+    if (!open) setRuleDialogMode("create");
   };
 
   const updateDraftEdit = (draft: RuleDraft, patch: Partial<RuleDraftEdit>) => {
@@ -251,6 +317,83 @@ export default function Transactions() {
   const allSelected = transactions.length > 0 && selected.size === transactions.length;
   const singleRuleTransaction = ruleSourceTransactions.length === 1 ? ruleSourceTransactions[0] : null;
   const singleRuleDraft = ruleDrafts.length === 1 ? ruleDrafts[0] : null;
+  const currentReviewTransaction = quickReviewOpen ? transactions[Math.min(quickReviewIndex, transactions.length - 1)] : undefined;
+
+  const toggleDescription = (id: number) => {
+    setExpandedDescriptions((current) => {
+      const next = new Set(current);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const setQuickReviewTransaction = (index: number) => {
+    if (transactions.length === 0) return;
+    const nextIndex = Math.min(Math.max(index, 0), transactions.length - 1);
+    setQuickReviewIndex(nextIndex);
+    setQuickReviewCategory(transactions[nextIndex]?.category ?? "");
+  };
+
+  const openQuickReview = () => {
+    if (transactions.length === 0) {
+      toast({ variant: "destructive", title: "No transactions to review" });
+      return;
+    }
+
+    setNeedsReview(true);
+    setSelected(new Set());
+    setQuickReviewIndex(0);
+    setQuickReviewCategory(transactions[0]?.category ?? "");
+    setQuickReviewOpen(true);
+  };
+
+  const advanceQuickReview = () => {
+    if (quickReviewIndex < transactions.length - 1) {
+      setQuickReviewTransaction(quickReviewIndex + 1);
+    } else {
+      setQuickReviewOpen(false);
+      toast({ title: "Review queue complete" });
+    }
+  };
+
+  const handleQuickReviewSave = () => {
+    if (!currentReviewTransaction || !quickReviewCategory) return;
+
+    updateMutation.mutate(
+      { id: currentReviewTransaction.id, data: { category: quickReviewCategory, reviewed: true } },
+      {
+        onSuccess: () => {
+          invalidate();
+          advanceQuickReview();
+        },
+        onError: () => toast({ variant: "destructive", title: "Failed to update transaction" }),
+      },
+    );
+  };
+
+  const handleQuickReviewMarkReviewed = () => {
+    if (!currentReviewTransaction) return;
+
+    bulkReviewMutation.mutate(
+      { data: { ids: [currentReviewTransaction.id], reviewed: true } },
+      {
+        onSuccess: () => {
+          invalidate();
+          advanceQuickReview();
+        },
+        onError: () => toast({ variant: "destructive", title: "Failed to mark reviewed" }),
+      },
+    );
+  };
+
+  const handleQuickReviewRule = () => {
+    if (!currentReviewTransaction) return;
+    setQuickReviewOpen(false);
+    openRuleDialog(
+      [currentReviewTransaction.id],
+      { mode: "remember", categoryOverride: quickReviewCategory || currentReviewTransaction.category },
+    );
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4">
@@ -267,6 +410,24 @@ export default function Transactions() {
               <Button variant="outline" size="sm" onClick={() => setBulkDialogOpen(true)}>
                 <Tag className="w-3.5 h-3.5 mr-1.5" />
                 Categorize {selected.size}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleApplyRulesToSelected}
+                disabled={applySelectedRulesMutation.isPending}
+              >
+                <Wand2 className="w-3.5 h-3.5 mr-1.5" />
+                Apply rules
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMarkSelectedReviewed}
+                disabled={bulkReviewMutation.isPending}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                Mark reviewed
               </Button>
               <Button variant="outline" size="sm" onClick={openSelectedRuleDialog} disabled={draftRuleMutation.isPending}>
                 <Wand2 className="w-3.5 h-3.5 mr-1.5" />
@@ -299,6 +460,15 @@ export default function Transactions() {
             className="lg:w-auto"
           >
             Needs review
+          </Button>
+          <Button
+            variant="outline"
+            onClick={openQuickReview}
+            disabled={!transactions.length}
+            className="lg:w-auto"
+          >
+            <ListChecks className="w-4 h-4 mr-2" />
+            Quick review
           </Button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -341,13 +511,14 @@ export default function Transactions() {
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("merchant")}>
                 <span className="flex items-center">Merchant <SortIcon column="merchant" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead className="min-w-[180px]">Original description</TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("category")}>
                 <span className="flex items-center">Category <SortIcon column="category" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
               <TableHead className="cursor-pointer select-none text-right" onClick={() => handleSort("amount")}>
                 <span className="flex items-center justify-end">Amount <SortIcon column="amount" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
+              <TableHead>Type</TableHead>
               <TableHead className="min-w-[140px]">Notes</TableHead>
               <TableHead className="min-w-[150px]">Actions</TableHead>
             </TableRow>
@@ -355,11 +526,11 @@ export default function Transactions() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">Loading...</TableCell>
+                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading...</TableCell>
               </TableRow>
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No transactions found.</TableCell>
+                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No transactions found.</TableCell>
               </TableRow>
             ) : (
               transactions.map((t) => (
@@ -369,15 +540,19 @@ export default function Transactions() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">{formatDate(t.date)}</TableCell>
                   <TableCell>
-                    <div className="font-medium text-sm">{t.merchant}</div>
-                    {t.description !== t.merchant && (
-                      <div className="text-xs text-muted-foreground truncate max-w-[180px]">{t.description}</div>
-                    )}
+                    <div className="font-medium text-sm max-w-[160px] truncate" title={t.merchant}>
+                      {t.merchant}
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
-                      {t.type}
-                    </Badge>
+                    <button
+                      type="button"
+                      className={`text-left text-xs text-muted-foreground hover:text-foreground ${expandedDescriptions.has(t.id) ? "max-w-[320px] whitespace-normal break-words" : "block max-w-[240px] truncate"}`}
+                      onClick={() => toggleDescription(t.id)}
+                      title={t.description}
+                    >
+                      {t.description}
+                    </button>
                   </TableCell>
                   <TableCell>
                     <Select value={t.category} onValueChange={(val) => handleCategoryChange(t.id, val)}>
@@ -391,6 +566,11 @@ export default function Transactions() {
                   </TableCell>
                   <TableCell className={`text-right font-mono text-sm font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
                     {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
+                      {t.type}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     {editingNote?.id === t.id ? (
@@ -456,12 +636,18 @@ export default function Transactions() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={ruleDialogOpen} onOpenChange={setRuleDialogOpen}>
+      <Dialog open={ruleDialogOpen} onOpenChange={handleRuleDialogOpenChange}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Create categorization rule</DialogTitle>
+            <DialogTitle>
+              {ruleDialogMode === "remember"
+                ? "Do you want to remember this categorization?"
+                : "Create categorization rule"}
+            </DialogTitle>
             <DialogDescription>
-              Create one or more custom rules from existing transactions. Custom rules override built-in rules.
+              {ruleDialogMode === "remember"
+                ? "Save the transaction change only, or create a custom rule so similar transactions use this category automatically."
+                : "Create one or more custom rules from existing transactions. Custom rules override built-in rules."}
             </DialogDescription>
           </DialogHeader>
 
@@ -548,20 +734,125 @@ export default function Transactions() {
             })}
           </div>
 
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
+          <DialogFooter className="flex-wrap gap-2 sm:gap-2">
+            {ruleDialogMode === "remember" ? (
+              <>
+                <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>
+                  No, only update this transaction
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => saveRulesFromDialog(false)}
+                  disabled={!canSaveRules || createRulesMutation.isPending}
+                >
+                  Yes, create a rule for this merchant going forward
+                </Button>
+                <Button
+                  onClick={() => saveRulesFromDialog(true)}
+                  disabled={!canSaveRules || createRulesMutation.isPending}
+                >
+                  Yes, create a rule and apply it to all matching past transactions
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => saveRulesFromDialog(false)}
+                  disabled={!canSaveRules || createRulesMutation.isPending}
+                >
+                  Save rule only
+                </Button>
+                <Button
+                  onClick={() => saveRulesFromDialog(true)}
+                  disabled={!canSaveRules || createRulesMutation.isPending}
+                >
+                  Save rule and apply to all matching
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={quickReviewOpen} onOpenChange={setQuickReviewOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Quick review</DialogTitle>
+            <DialogDescription>
+              {currentReviewTransaction
+                ? `${quickReviewIndex + 1} of ${transactions.length} transactions in the current review queue`
+                : "No transactions are available in the current review queue."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {currentReviewTransaction && (
+            <div className="space-y-4">
+              <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Date</span>
+                  <span className="font-medium">{formatDate(currentReviewTransaction.date)}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Merchant</span>
+                  <span className="font-medium text-right">{currentReviewTransaction.merchant}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className={`font-mono font-medium ${currentReviewTransaction.type === "credit" ? "text-emerald-600" : ""}`}>
+                    {currentReviewTransaction.type === "credit" ? "+" : ""}{formatCurrency(currentReviewTransaction.amount)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block mb-1">Original description</span>
+                  <div className="text-xs break-words">{currentReviewTransaction.description}</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
+                  Category
+                </label>
+                <Select value={quickReviewCategory} onValueChange={setQuickReviewCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-wrap gap-2 sm:gap-2">
             <Button
               variant="outline"
-              onClick={() => saveRulesFromDialog(false)}
-              disabled={!canSaveRules || createRulesMutation.isPending}
+              onClick={() => setQuickReviewTransaction(quickReviewIndex - 1)}
+              disabled={!currentReviewTransaction || quickReviewIndex === 0}
             >
-              Save rule only
+              Previous
             </Button>
             <Button
-              onClick={() => saveRulesFromDialog(true)}
-              disabled={!canSaveRules || createRulesMutation.isPending}
+              variant="outline"
+              onClick={handleQuickReviewMarkReviewed}
+              disabled={!currentReviewTransaction || bulkReviewMutation.isPending}
             >
-              Save rule and apply to all matching
+              Mark reviewed
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleQuickReviewRule}
+              disabled={!currentReviewTransaction || draftRuleMutation.isPending}
+            >
+              Create rule
+            </Button>
+            <Button
+              onClick={handleQuickReviewSave}
+              disabled={!currentReviewTransaction || !quickReviewCategory || updateMutation.isPending}
+            >
+              Save & next
             </Button>
           </DialogFooter>
         </DialogContent>

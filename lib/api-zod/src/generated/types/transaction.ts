@@ -17,5 +17,6 @@ export interface Transaction {
   month: string;
   /** @nullable */
   notes?: string | null;
+  reviewed: boolean;
   createdAt: string;
 }

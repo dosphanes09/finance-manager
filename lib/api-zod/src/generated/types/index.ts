@@ -6,9 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './applyRulesToSelectedTransactionsRequest';
 export * from './budget';
 export * from './bulkCategorizeRequest';
 export * from './bulkCategorizeResult';
+export * from './bulkReviewTransactionsRequest';
+export * from './bulkReviewTransactionsResult';
 export * from './category';
 export * from './categoryBreakdown';
 export * from './confirmUploadRequest';
