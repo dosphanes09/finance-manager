@@ -304,6 +304,13 @@ Users can also add custom rules from the **Categories & Rules** page — these a
 - Use **Needs review** to focus on transactions categorized as `other`, low-confidence matches, or generic merchants such as card payments. **Quick review** steps through the current queue one transaction at a time.
 - Select multiple transactions to bulk change category, create grouped rules, apply existing rules to selected rows, or mark them reviewed.
 - Custom rules are deterministic and always run before built-in keyword rules. AI is not used for categorization.
+- Category values stored in PostgreSQL are canonical IDs such as `food`; the UI displays labels such as `Food & Dining` from the shared `@workspace/finance-categories` package.
+
+To normalize old database rows that may contain display labels:
+
+```bash
+pnpm --filter @workspace/scripts run normalize-categories
+```
 
 ### Dashboard period analysis
 

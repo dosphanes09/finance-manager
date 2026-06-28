@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, inArray } from "drizzle-orm";
 import { db, categorizationRulesTable, transactionsTable } from "@workspace/db";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   ListRulesResponse,
   CreateRuleBody,
@@ -28,8 +29,13 @@ const router: IRouter = Router();
 function serializeRule(r: typeof categorizationRulesTable.$inferSelect) {
   return {
     ...r,
+    category: normalizeCategoryId(r.category),
     createdAt: r.createdAt.toISOString(),
   };
+}
+
+function normalizeRuleRows<T extends { category: string }>(rows: T[]): T[] {
+  return rows.map((row) => ({ ...row, category: normalizeCategoryId(row.category) }));
 }
 
 router.get("/rules", async (_req, res): Promise<void> => {
@@ -62,7 +68,7 @@ router.get("/rules/suggestions", async (_req, res): Promise<void> => {
       .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
   ]);
 
-  res.json(ListRuleSuggestionsResponse.parse(buildRuleSuggestions(transactions, rules)));
+  res.json(ListRuleSuggestionsResponse.parse(buildRuleSuggestions(transactions, normalizeRuleRows(rules))));
 });
 
 router.post("/rules/draft", async (req, res): Promise<void> => {
@@ -121,6 +127,7 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
 
   for (const rule of body.data.rules) {
     const pattern = rule.pattern.trim();
+    const category = normalizeCategoryId(rule.category);
     if (!pattern || !rule.category.trim()) {
       res.status(400).json({ error: "Rule pattern and category are required" });
       return;
@@ -130,7 +137,7 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
       .insert(categorizationRulesTable)
       .values({
         pattern,
-        category: rule.category,
+        category,
         priority: rule.priority ?? 30,
       })
       .returning();
@@ -145,9 +152,9 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
           .filter((transaction) => selectedIds.has(transaction.id))
           .map((transaction) => transaction.id);
 
-    const ids = updatesByCategory.get(rule.category) ?? new Set<number>();
+    const ids = updatesByCategory.get(category) ?? new Set<number>();
     for (const id of targetIds) ids.add(id);
-    updatesByCategory.set(rule.category, ids);
+    updatesByCategory.set(category, ids);
   }
 
   const updatedIds = new Set<number>();
@@ -203,7 +210,7 @@ router.post("/rules/apply", async (_req, res): Promise<void> => {
       .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
   ]);
 
-  const updates = categorizeTransactionsWithRules(transactions, rules);
+  const updates = categorizeTransactionsWithRules(transactions, normalizeRuleRows(rules));
   const updatesByCategory = new Map<string, number[]>();
 
   for (const update of updates) {
@@ -274,7 +281,7 @@ router.post("/rules/apply-selected", async (req, res): Promise<void> => {
       .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
   ]);
 
-  const updates = categorizeTransactionsWithRules(transactions, rules);
+  const updates = categorizeTransactionsWithRules(transactions, normalizeRuleRows(rules));
   const updatesByCategory = new Map<string, number[]>();
 
   for (const update of updates) {
@@ -318,7 +325,8 @@ router.post("/rules", async (req, res): Promise<void> => {
     return;
   }
 
-  const { pattern, category, priority = 0 } = body.data;
+  const { pattern, priority = 0 } = body.data;
+  const category = normalizeCategoryId(body.data.category);
 
   const [row] = await db
     .insert(categorizationRulesTable)

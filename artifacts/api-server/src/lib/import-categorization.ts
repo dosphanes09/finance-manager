@@ -4,6 +4,7 @@ import {
   matchCustomRule,
   type CustomRule,
 } from "./categorizer";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   buildMerchantMemoryKey,
   type MerchantMemoryRecord,
@@ -28,7 +29,7 @@ export async function categorizeForImport(
   if (customRule) {
     return {
       merchant: transaction.merchant,
-      category: customRule.category,
+      category: normalizeCategoryId(customRule.category),
       confidence: 0.99,
       source: "custom_rule",
       explanation: `Matched user rule "${customRule.pattern}".`,
@@ -40,7 +41,7 @@ export async function categorizeForImport(
   if (remembered) {
     return {
       merchant: remembered.displayName,
-      category: remembered.category,
+      category: normalizeCategoryId(remembered.category),
       confidence: Math.max(0.9, remembered.confidence),
       source: "merchant_memory",
       explanation: `Recognized merchant from persistent merchant database using key "${remembered.pattern}".`,
@@ -48,10 +49,11 @@ export async function categorizeForImport(
   }
 
   const parserConfidence = Number(transaction.categorizationConfidence ?? transaction.confidence ?? 0);
-  if (transaction.category && transaction.category !== "other" && parserConfidence >= 0.74) {
+  const parserCategory = normalizeCategoryId(transaction.category);
+  if (parserCategory !== "other" && parserConfidence >= 0.74) {
     return {
       merchant: transaction.merchant,
-      category: transaction.category,
+      category: parserCategory,
       confidence: roundConfidence(parserConfidence),
       source: transaction.categorizationSource === "merchant_rule" ? "merchant_rule" : "built_in",
       explanation: transaction.categorizationExplanation ?? "Matched deterministic parser categorization rule.",
@@ -118,11 +120,12 @@ async function maybeCategorizeWithLlm(
     explanation?: string;
   } | null;
 
-  if (!body?.category || !CATEGORIES.some((category) => category.id === body.category)) return null;
+  const normalizedCategory = normalizeCategoryId(body?.category);
+  if (!body?.category || normalizedCategory === "other") return null;
 
   return {
     merchant: transaction.merchant,
-    category: body.category,
+    category: normalizedCategory,
     confidence: roundConfidence(Number(body.confidence ?? 0.66)),
     source: "llm",
     explanation: body.explanation

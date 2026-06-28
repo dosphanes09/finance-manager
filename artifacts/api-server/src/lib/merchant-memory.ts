@@ -1,5 +1,6 @@
 import { inArray, sql } from "drizzle-orm";
 import { db, merchantsTable } from "@workspace/db";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import { normalizeMerchantKey } from "./statement-parsers/merchant-normalizer";
 
 export interface MerchantMemoryInput {
@@ -57,6 +58,7 @@ export async function loadMerchantMemory(
       row.merchantKey,
       {
         ...row,
+        category: normalizeCategoryId(row.category),
         confidence: Number(row.confidence),
       },
     ]),
@@ -70,7 +72,7 @@ export async function rememberMerchantsFromTransactions(
   const rows = transactions
     .map((transaction) => {
       const merchantKey = buildMerchantMemoryKey(transaction.merchant, transaction.description);
-      const category = transaction.category ?? "other";
+      const category = normalizeCategoryId(transaction.category);
       const confidence = source === "user_correction" ? 0.99 : Math.max(0.7, Number(transaction.confidence ?? 0.82));
 
       if (!merchantKey || category === "other") return null;

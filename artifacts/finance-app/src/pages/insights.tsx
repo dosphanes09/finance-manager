@@ -9,14 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
+import { getCategoryColor, getCategoryLabel } from "@workspace/finance-categories";
 import { TrendingUp, TrendingDown, Minus, RefreshCcw, Lightbulb, Heart } from "lucide-react";
-
-const CATEGORY_COLORS: Record<string, string> = {
-  groceries: "#22c55e", food: "#f97316", transportation: "#3b82f6",
-  bills: "#a855f7", subscriptions: "#06b6d4", shopping: "#ec4899",
-  education: "#eab308", health: "#14b8a6", entertainment: "#f43f5e",
-  rent: "#6366f1", income: "#10b981", other: "#94a3b8",
-};
 
 function ScoreRing({ score }: { score: number }) {
   const color = score >= 70 ? "#22c55e" : score >= 40 ? "#f97316" : "#ef4444";
@@ -120,13 +114,13 @@ export default function Insights() {
               ) : (
                 <div className="space-y-2">
                   {insights.monthOverMonth.map((row) => {
-                    const color = CATEGORY_COLORS[row.category] ?? "#94a3b8";
+                    const color = getCategoryColor(row.category);
                     const isUp = row.change > 5;
                     const isDown = row.change < -5;
                     return (
                       <div key={row.category} className="flex items-center gap-3 py-2 border-b last:border-0">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span className="text-sm font-medium capitalize w-32 shrink-0">{row.category}</span>
+                        <span className="text-sm font-medium w-32 shrink-0">{getCategoryLabel(row.category)}</span>
                         <div className="flex-1 flex items-center gap-2">
                           <span className="text-sm text-muted-foreground">{formatCurrency(row.current)}</span>
                           <span className="text-xs text-muted-foreground">vs {formatCurrency(row.previous)}</span>

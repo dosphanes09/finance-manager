@@ -17,6 +17,8 @@ const transactions: DashboardTransactionLike[] = [
   { date: "2026-04-10", amount: 50, type: "debit", category: "subscriptions", merchant: "Spotify" },
   { date: "2026-05-15", amount: 200, type: "debit", category: "groceries", merchant: "Migros" },
   { date: "2026-06-20", amount: 300, type: "debit", category: "shopping", merchant: "Trendyol" },
+  { date: "2026-06-21", amount: 90, type: "debit", category: "Food & Dining", merchant: "Starbucks" },
+  { date: "2026-06-22", amount: 60, type: "debit", category: "food_dining", merchant: "Yemeksepeti" },
   { date: "2025-12-29", amount: 500, type: "debit", category: "bills", merchant: "Utility" },
 ];
 
@@ -73,9 +75,19 @@ describe("dashboard periods", () => {
       category: "groceries",
       amount: 320,
       count: 2,
-      percentage: 42.7,
+      percentage: 35.6,
     });
     assert.equal(grouped.some((row) => row.category === "income"), false);
+  });
+
+  it("normalizes legacy category labels before dashboard aggregation", () => {
+    const grouped = groupTransactionsByCategory([
+      { date: "2026-06-01", amount: 100, type: "debit", category: "food", merchant: "Cafe" },
+      { date: "2026-06-02", amount: 50, type: "debit", category: "Food & Dining", merchant: "Restaurant" },
+      { date: "2026-06-03", amount: 25, type: "debit", category: "dining", merchant: "Bakery" },
+    ]);
+
+    assert.deepEqual(grouped, [{ category: "food", amount: 175, count: 3, percentage: 100 }]);
   });
 
   it("keeps empty months in monthly trends with zero totals", () => {

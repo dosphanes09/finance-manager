@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { categorizationRulesTable, db, transactionsTable } from "@workspace/db";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   parseCsv,
   parseExcel,
@@ -237,7 +238,7 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
         transactionType: t.transactionType ?? t.type,
         transactionKind: t.transactionKind ?? "other",
         balance: t.balance ?? null,
-        category: categorization.category,
+        category: normalizeCategoryId(categorization.category),
         bank: t.bank ?? "generic",
         parser: t.parser ?? "generic",
         confidence: t.confidence ?? categorization.confidence,
@@ -294,7 +295,7 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
       bank: t.bank ?? "generic",
       parser: t.parser ?? null,
       balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
-      category: t.category,
+      category: normalizeCategoryId(t.category),
       categorizationConfidence: String(t.categorizationConfidence ?? 1),
       categorizationSource: t.categorizationSource ?? "user_preview",
       categorizationExplanation: t.categorizationExplanation ?? "Category accepted from upload preview.",
@@ -360,7 +361,7 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
         bank: t.bank ?? "generic",
         parser: t.parser ?? null,
         balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
-        category: categorization.category,
+        category: normalizeCategoryId(categorization.category),
         categorizationConfidence: String(categorization.confidence),
         categorizationSource: categorization.source,
         categorizationExplanation: categorization.explanation,
@@ -459,6 +460,7 @@ function sanitizeErrorForLog(err: unknown) {
 function serializeUploadedTransaction(t: typeof transactionsTable.$inferSelect) {
   return {
     ...t,
+    category: normalizeCategoryId(t.category),
     amount: parseFloat(t.amount),
     balance: t.balance === null ? null : parseFloat(t.balance),
     categorizationConfidence: parseFloat(t.categorizationConfidence),

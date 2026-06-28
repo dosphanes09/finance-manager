@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { CATEGORIES } from "../lib/categorizer";
+import { CATEGORIES } from "@workspace/finance-categories";
 import { ListCategoriesResponse } from "@workspace/api-zod";
 
 const router: IRouter = Router();

@@ -17,6 +17,9 @@
     },
     {
       "path": "../../lib/finance-format"
+    },
+    {
+      "path": "../../lib/finance-categories"
     }
   ]
 }

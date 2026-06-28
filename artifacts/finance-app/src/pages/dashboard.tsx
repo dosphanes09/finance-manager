@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useGetDashboard, getGetDashboardQueryKey } from "@workspace/api-client-react";
 import type { GetDashboardParams, GetDashboardPeriod } from "@workspace/api-client-react";
+import { getCategoryColor as getCanonicalCategoryColor, getCategoryLabel } from "@workspace/finance-categories";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,15 +16,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
 } from "recharts";
 
-const CATEGORY_COLORS: Record<string, string> = {
-  groceries: "#22c55e", food: "#f97316", transportation: "#3b82f6",
-  bills: "#a855f7", subscriptions: "#06b6d4", shopping: "#ec4899",
-  education: "#eab308", health: "#14b8a6", entertainment: "#f43f5e",
-  rent: "#6366f1", income: "#10b981", other: "#94a3b8",
-};
-
 function getCategoryColor(category: string, index: number) {
-  return CATEGORY_COLORS[category] ?? `hsl(${(index * 47) % 360}, 70%, 55%)`;
+  return getCanonicalCategoryColor(category) ?? `hsl(${(index * 47) % 360}, 70%, 55%)`;
 }
 
 const PERIOD_STORAGE_KEY = "finance-dashboard-period";
@@ -135,6 +129,10 @@ export default function Dashboard() {
   );
 
   const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "This month";
+  const categoryBreakdown = d?.categoryBreakdown.map((row) => ({
+    ...row,
+    categoryLabel: getCategoryLabel(row.category),
+  })) ?? [];
   const categoryTrendRows = d?.categoryMonthlyTrends.filter((row) => row.months.some((month) => month.amount > 0)).slice(0, 6) ?? [];
   const showCategoryTrend = (d?.monthlyTrends.length ?? 0) > 1 && categoryTrendRows.length > 0;
 
@@ -204,7 +202,7 @@ export default function Dashboard() {
               subtitle={d.netBalance >= 0 ? "You're in the green" : "Spending exceeds income"} />
             <SummaryCard title="Total Income" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency />
             <SummaryCard title="Total Expenses" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
-              subtitle={d.topCategory ? `Top: ${d.topCategory}` : undefined} />
+              subtitle={d.topCategory ? `Top: ${getCategoryLabel(d.topCategory)}` : undefined} />
             <SummaryCard title="Transactions" amount={d.transactionCount} icon={<Activity className="h-4 w-4 text-muted-foreground" />} />
           </div>
 
@@ -216,14 +214,14 @@ export default function Dashboard() {
                 <CardDescription>Total and share for the selected period</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-                {d.categoryBreakdown.length > 0 ? (
+                {categoryBreakdown.length > 0 ? (
                   <>
                     <div className="h-[260px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={d.categoryBreakdown} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                            paddingAngle={2} dataKey="amount" nameKey="category">
-                            {d.categoryBreakdown.map((entry, index) => (
+                          <Pie data={categoryBreakdown} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
+                            paddingAngle={2} dataKey="amount" nameKey="categoryLabel">
+                            {categoryBreakdown.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={getCategoryColor(entry.category, index)} />
                             ))}
                           </Pie>
@@ -236,12 +234,12 @@ export default function Dashboard() {
                       </ResponsiveContainer>
                     </div>
                     <div className="space-y-2">
-                      {d.categoryBreakdown.slice(0, 7).map((row, index) => (
+                      {categoryBreakdown.slice(0, 7).map((row, index) => (
                         <div key={row.category} className="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
                           <div className="min-w-0 flex items-center gap-2">
                             <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: getCategoryColor(row.category, index) }} />
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{row.category}</p>
+                              <p className="truncate text-sm font-medium">{row.categoryLabel}</p>
                               <p className="text-xs text-muted-foreground">{row.percentage}% share</p>
                             </div>
                           </div>
@@ -318,7 +316,7 @@ export default function Dashboard() {
                       <tbody>
                         {categoryTrendRows.map((row) => (
                           <tr key={row.category} className="border-b last:border-0">
-                            <td className="py-2 pr-3 font-medium">{row.category}</td>
+                            <td className="py-2 pr-3 font-medium">{getCategoryLabel(row.category)}</td>
                             {row.months.map((month) => (
                               <td key={`${row.category}-${month.month}`} className="px-3 py-2 text-right font-mono">
                                 {formatCurrency(month.amount)}
@@ -377,7 +375,7 @@ export default function Dashboard() {
                   <div key={t.id} className="flex items-center justify-between py-1 border-b last:border-0">
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{t.merchant}</p>
-                      <Badge variant="outline" className="text-xs mt-0.5 py-0">{t.category}</Badge>
+                      <Badge variant="outline" className="text-xs mt-0.5 py-0">{getCategoryLabel(t.category)}</Badge>
                     </div>
                     <span className="text-sm font-mono font-medium ml-3 shrink-0 text-rose-600">
                       {formatCurrency(t.amount)}

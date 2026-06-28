@@ -246,6 +246,8 @@ The normalizer:
 
 Import categorization is orchestrated in `import-categorization.ts`.
 
+Canonical categories live in `lib/finance-categories`. PostgreSQL stores category IDs only, such as `food`, `bills`, and `rent`. Frontend pages display labels such as `Food & Dining` and `Bills & Utilities` by resolving those IDs through the shared package or `/api/categories`. Backend write paths normalize legacy labels and aliases before saving so labels are never persisted as `transaction.category`.
+
 Decision order:
 
 1. User custom rules, matched by normalized substring.

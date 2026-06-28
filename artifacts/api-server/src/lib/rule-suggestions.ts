@@ -5,6 +5,7 @@ import {
   normalizeCategorizationText,
   type CustomRule,
 } from "./categorizer";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import { cleanMerchantText, MERCHANT_RULES, normalizeMerchant } from "./statement-parsers/merchant-normalizer";
 import { maskSensitiveData, removeDatesAndAmounts } from "./statement-parsers/text-utils";
 
@@ -71,7 +72,7 @@ export function buildRuleSuggestions(
     const suggestedCategory = normalized.category !== "other" ? normalized.category : builtInCategory;
     if (suggestedCategory === "other") continue;
 
-    const currentCategory = transaction.category || "other";
+    const currentCategory = normalizeCategoryId(transaction.category);
     const isOther = currentCategory === "other";
     const isPossiblyWrong = currentCategory !== suggestedCategory;
     if (!isOther && !isPossiblyWrong) continue;
@@ -160,10 +161,8 @@ export function buildRuleDraftsFromTransactions(transactions: TransactionForRule
 
     group.transactionIds.push(transaction.id);
     group.transactionCount += 1;
-    group.currentCategories.set(
-      transaction.category,
-      (group.currentCategories.get(transaction.category) ?? 0) + 1,
-    );
+    const currentCategory = normalizeCategoryId(transaction.category);
+    group.currentCategories.set(currentCategory, (group.currentCategories.get(currentCategory) ?? 0) + 1);
     if (group.sampleDescriptions.size < 3) {
       group.sampleDescriptions.add(maskSensitiveData(transaction.description));
     }
@@ -222,7 +221,7 @@ export function categorizeTransactionsWithRules(
     .map((transaction) => ({
       id: transaction.id,
       category: categorize(transaction.merchant, transaction.description, customRules),
-      currentCategory: transaction.category,
+      currentCategory: normalizeCategoryId(transaction.category),
     }))
     .filter((transaction) => transaction.category !== transaction.currentCategory)
     .map(({ id, category }) => ({ id, category }));
@@ -250,11 +249,11 @@ export function needsRuleReview(transaction: TransactionForRuleAnalysis): boolea
     : Number(transaction.categorizationConfidence);
 
   return (
-    transaction.category === "other" ||
+    normalizeCategoryId(transaction.category) === "other" ||
     isGenericMerchant ||
     isLowConfidence ||
     storedConfidence < 0.7 ||
-    (suggestedCategory !== "other" && suggestedCategory !== transaction.category)
+    (suggestedCategory !== "other" && suggestedCategory !== normalizeCategoryId(transaction.category))
   );
 }
 

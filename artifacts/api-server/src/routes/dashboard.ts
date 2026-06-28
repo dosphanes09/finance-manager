@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, desc, gte, lte } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
 import { GetDashboardQueryParams, GetDashboardResponse } from "@workspace/api-zod";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   filterTransactionsByDateRange,
   getDateRangeForPeriod,
@@ -17,6 +18,7 @@ const router: IRouter = Router();
 function serializeTransaction(t: typeof transactionsTable.$inferSelect) {
   return {
     ...t,
+    category: normalizeCategoryId(t.category),
     amount: parseFloat(t.amount),
     balance: t.balance === null ? null : parseFloat(t.balance),
     categorizationConfidence: parseFloat(t.categorizationConfidence),
@@ -98,7 +100,7 @@ function buildCategoryMonthlyTrends(
       continue;
     }
 
-    const category = transaction.category || "other";
+    const category = normalizeCategoryId(transaction.category);
     if (!categories.includes(category)) {
       continue;
     }

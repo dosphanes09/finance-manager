@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import { needsRuleReview } from "../lib/rule-suggestions";
 import { rememberMerchantsFromTransactions } from "../lib/merchant-memory";
 import {
@@ -22,6 +23,7 @@ const router: IRouter = Router();
 function serializeTransaction(t: typeof transactionsTable.$inferSelect) {
   return {
     ...t,
+    category: normalizeCategoryId(t.category),
     amount: parseFloat(t.amount),
     balance: t.balance === null ? null : parseFloat(t.balance),
     categorizationConfidence: parseFloat(t.categorizationConfidence),
@@ -61,7 +63,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
 
   const conditions = [];
   if (month) conditions.push(eq(transactionsTable.month, month));
-  if (category) conditions.push(eq(transactionsTable.category, category));
+  if (category) conditions.push(eq(transactionsTable.category, normalizeCategoryId(category)));
   if (merchant) conditions.push(sql`${transactionsTable.merchant} ilike ${"%" + merchant + "%"}`);
   if (type) conditions.push(eq(transactionsTable.type, type));
   if (search) {
@@ -135,7 +137,8 @@ router.post("/transactions/bulk-categorize", async (req, res): Promise<void> => 
     return;
   }
 
-  const { ids, category } = body.data;
+  const { ids } = body.data;
+  const category = normalizeCategoryId(body.data.category);
 
   if (ids.length === 0) {
     res.json(BulkCategorizeResponse.parse({ updated: 0 }));
@@ -206,7 +209,7 @@ router.patch("/transactions/:id", async (req, res): Promise<void> => {
 
   const update: Partial<typeof transactionsTable.$inferInsert> = {};
   if (body.data.category !== undefined) {
-    update.category = body.data.category;
+    update.category = normalizeCategoryId(body.data.category);
     update.reviewed = true;
     update.categorizationConfidence = "0.99";
     update.categorizationSource = "user_correction";

@@ -1,3 +1,5 @@
+import { normalizeCategoryId } from "@workspace/finance-categories";
+
 export type DashboardPeriod =
   | "this_month"
   | "last_3_months"
@@ -207,7 +209,7 @@ export function groupTransactionsByCategory<T extends DashboardTransactionLike>(
       continue;
     }
 
-    const category = transaction.category || "other";
+    const category = normalizeCategoryId(transaction.category);
     const current = byCategory.get(category) ?? { amount: 0, count: 0 };
     current.amount += Number(transaction.amount);
     current.count += 1;

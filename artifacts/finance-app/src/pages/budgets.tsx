@@ -19,20 +19,7 @@ import { Trash2, Wallet, AlertTriangle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
-
-const CATEGORIES = [
-  { id: "groceries", label: "Groceries", color: "#22c55e" },
-  { id: "food", label: "Food & Dining", color: "#f97316" },
-  { id: "transportation", label: "Transportation", color: "#3b82f6" },
-  { id: "bills", label: "Bills & Utilities", color: "#a855f7" },
-  { id: "subscriptions", label: "Subscriptions", color: "#06b6d4" },
-  { id: "shopping", label: "Shopping", color: "#ec4899" },
-  { id: "education", label: "Education", color: "#eab308" },
-  { id: "health", label: "Health & Fitness", color: "#14b8a6" },
-  { id: "entertainment", label: "Entertainment", color: "#f43f5e" },
-  { id: "rent", label: "Rent & Housing", color: "#6366f1" },
-  { id: "other", label: "Other", color: "#94a3b8" },
-];
+import { CATEGORIES } from "@workspace/finance-categories";
 
 export default function Budgets() {
   const { data: months } = useListMonths();
@@ -120,7 +107,7 @@ export default function Budgets() {
         </div>
       ) : (
         <div className="space-y-3">
-          {CATEGORIES.map((cat) => {
+          {CATEGORIES.filter((cat) => cat.id !== "income").map((cat) => {
             const budget = budgetMap.get(cat.id);
             const spent = spendingMap.get(cat.id) ?? 0;
             const limit = budget ? budget.amount : 0;

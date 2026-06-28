@@ -176,6 +176,9 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/finance-categories':
+        specifier: workspace:*
+        version: link:../../lib/finance-categories
       '@workspace/finance-format':
         specifier: workspace:*
         version: link:../../lib/finance-format
@@ -357,6 +360,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/finance-categories':
+        specifier: workspace:*
+        version: link:../../lib/finance-categories
       '@workspace/finance-format':
         specifier: workspace:*
         version: link:../../lib/finance-format
@@ -476,9 +482,21 @@ importers:
         specifier: ^0.31.10
         version: 0.31.10
 
+  lib/finance-categories: {}
+
   lib/finance-format: {}
 
   scripts:
+    dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../lib/db
+      '@workspace/finance-categories':
+        specifier: workspace:*
+        version: link:../lib/finance-categories
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.22.0)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

@@ -1,3 +1,5 @@
+import { CATEGORIES, normalizeCategoryId } from "@workspace/finance-categories";
+
 const CATEGORY_RULES: Record<string, string[]> = {
   groceries: [
     "migros", "carrefour", "a101", "bim", "şok", "sok",
@@ -110,7 +112,7 @@ export function matchCustomRule(
 
   for (const rule of customRules) {
     if (haystack.includes(normalizeCategorizationText(rule.pattern))) {
-      return rule;
+      return { ...rule, category: normalizeCategoryId(rule.category) };
     }
   }
 
@@ -138,17 +140,4 @@ export function categorize(
   return customRule?.category ?? categorizeBuiltIn(merchant, description);
 }
 
-export const CATEGORIES = [
-  { id: "groceries", label: "Groceries", color: "#22c55e" },
-  { id: "food", label: "Food & Dining", color: "#f97316" },
-  { id: "transportation", label: "Transportation", color: "#3b82f6" },
-  { id: "bills", label: "Bills & Utilities", color: "#a855f7" },
-  { id: "subscriptions", label: "Subscriptions", color: "#06b6d4" },
-  { id: "shopping", label: "Shopping", color: "#ec4899" },
-  { id: "education", label: "Education", color: "#eab308" },
-  { id: "health", label: "Health & Fitness", color: "#14b8a6" },
-  { id: "entertainment", label: "Entertainment", color: "#f43f5e" },
-  { id: "rent", label: "Rent & Housing", color: "#6366f1" },
-  { id: "income", label: "Income", color: "#10b981" },
-  { id: "other", label: "Other", color: "#94a3b8" },
-];
+export { CATEGORIES };

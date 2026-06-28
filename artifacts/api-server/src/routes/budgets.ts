@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, budgetsTable } from "@workspace/db";
+import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   ListBudgetsQueryParams,
   ListBudgetsResponse,
@@ -15,6 +16,7 @@ const router: IRouter = Router();
 function serializeBudget(b: typeof budgetsTable.$inferSelect) {
   return {
     ...b,
+    category: normalizeCategoryId(b.category),
     amount: parseFloat(b.amount),
     createdAt: b.createdAt.toISOString(),
     updatedAt: b.updatedAt.toISOString(),
@@ -50,7 +52,8 @@ router.put("/budgets/:month/:category", async (req, res): Promise<void> => {
     return;
   }
 
-  const { month, category } = pathParams.data;
+  const { month } = pathParams.data;
+  const category = normalizeCategoryId(pathParams.data.category);
   const { amount } = body.data;
 
   const [row] = await db
@@ -72,7 +75,8 @@ router.delete("/budgets/:month/:category", async (req, res): Promise<void> => {
     return;
   }
 
-  const { month, category } = pathParams.data;
+  const { month } = pathParams.data;
+  const category = normalizeCategoryId(pathParams.data.category);
 
   await db
     .delete(budgetsTable)
