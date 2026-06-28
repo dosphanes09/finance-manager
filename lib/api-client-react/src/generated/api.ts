@@ -904,7 +904,7 @@ export const getGetDashboardUrl = (params?: GetDashboardParams,) => {
 }
 
 /**
- * @summary Get dashboard data for a given month
+ * @summary Get dashboard data for a selected transaction-date period
  */
 export const getDashboard = async (params?: GetDashboardParams, options?: RequestInit): Promise<DashboardData> => {
 
@@ -951,7 +951,7 @@ export type GetDashboardQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Get dashboard data for a given month
+ * @summary Get dashboard data for a selected transaction-date period
  */
 
 export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>, TError = ErrorType<unknown>>(

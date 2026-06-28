@@ -163,8 +163,21 @@ export interface MonthlyTrend {
   income: number;
 }
 
+export interface CategoryTrendMonth {
+  month: string;
+  amount: number;
+}
+
+export interface CategoryMonthlyTrend {
+  category: string;
+  months: CategoryTrendMonth[];
+}
+
 export interface DashboardData {
   month: string;
+  period: string;
+  startDate: string;
+  endDate: string;
   totalExpenses: number;
   totalIncome: number;
   netBalance: number;
@@ -174,6 +187,7 @@ export interface DashboardData {
   categoryBreakdown: CategoryBreakdown[];
   topMerchants: MerchantSummary[];
   monthlyTrends: MonthlyTrend[];
+  categoryMonthlyTrends: CategoryMonthlyTrend[];
   recentTransactions: Transaction[];
   biggestExpenses: Transaction[];
   recurringPayments: MerchantSummary[];
@@ -330,8 +344,32 @@ export const ListTransactionsSortDir = {
 } as const;
 
 export type GetDashboardParams = {
+period?: GetDashboardPeriod;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate?: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+endDate?: string;
+/**
+ * Backward-compatible YYYY-MM month filter.
+ */
 month?: string;
 };
+
+export type GetDashboardPeriod = typeof GetDashboardPeriod[keyof typeof GetDashboardPeriod];
+
+
+export const GetDashboardPeriod = {
+  this_month: 'this_month',
+  last_3_months: 'last_3_months',
+  last_6_months: 'last_6_months',
+  this_year: 'this_year',
+  last_12_months: 'last_12_months',
+  custom: 'custom',
+} as const;
 
 export type ListBudgetsParams = {
 month?: string;

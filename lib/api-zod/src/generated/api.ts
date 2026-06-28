@@ -279,14 +279,24 @@ export const DeleteTransactionResponse = zod.void()
 
 
 /**
- * @summary Get dashboard data for a given month
+ * @summary Get dashboard data for a selected transaction-date period
  */
+export const getDashboardQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getDashboardQueryEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
 export const GetDashboardQueryParams = zod.object({
-  "month": zod.coerce.string().optional()
+  "period": zod.enum(['this_month', 'last_3_months', 'last_6_months', 'this_year', 'last_12_months', 'custom']).optional(),
+  "startDate": zod.coerce.string().regex(getDashboardQueryStartDateRegExp).optional(),
+  "endDate": zod.coerce.string().regex(getDashboardQueryEndDateRegExp).optional(),
+  "month": zod.coerce.string().optional().describe('Backward-compatible YYYY-MM month filter.')
 })
 
 export const GetDashboardResponse = zod.object({
   "month": zod.string(),
+  "period": zod.string(),
+  "startDate": zod.string(),
+  "endDate": zod.string(),
   "totalExpenses": zod.number(),
   "totalIncome": zod.number(),
   "netBalance": zod.number(),
@@ -307,6 +317,13 @@ export const GetDashboardResponse = zod.object({
   "month": zod.string(),
   "expenses": zod.number(),
   "income": zod.number()
+})),
+  "categoryMonthlyTrends": zod.array(zod.object({
+  "category": zod.string(),
+  "months": zod.array(zod.object({
+  "month": zod.string(),
+  "amount": zod.number()
+}))
 })),
   "recentTransactions": zod.array(zod.object({
   "id": zod.number(),

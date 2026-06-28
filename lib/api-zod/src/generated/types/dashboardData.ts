@@ -6,12 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CategoryBreakdown } from './categoryBreakdown';
+import type { CategoryMonthlyTrend } from './categoryMonthlyTrend';
 import type { MerchantSummary } from './merchantSummary';
 import type { MonthlyTrend } from './monthlyTrend';
 import type { Transaction } from './transaction';
 
 export interface DashboardData {
   month: string;
+  period: string;
+  startDate: string;
+  endDate: string;
   totalExpenses: number;
   totalIncome: number;
   netBalance: number;
@@ -21,6 +25,7 @@ export interface DashboardData {
   categoryBreakdown: CategoryBreakdown[];
   topMerchants: MerchantSummary[];
   monthlyTrends: MonthlyTrend[];
+  categoryMonthlyTrends: CategoryMonthlyTrend[];
   recentTransactions: Transaction[];
   biggestExpenses: Transaction[];
   recurringPayments: MerchantSummary[];

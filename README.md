@@ -7,7 +7,7 @@ A full-stack personal finance analytics platform. Upload CSV, Excel, or PDF bank
 ## Features
 
 - **Upload** CSV / Excel (.xlsx/.xls) / PDF bank statements with a two-step preview flow (review before saving, duplicate detection)
-- **Dashboard** — monthly KPIs, spending pie chart, top merchants bar chart, income vs expenses trend line, recent transactions, biggest expenses, recurring payment detection
+- **Dashboard** — flexible period KPIs, category totals and trends, top merchants bar chart, income vs expenses trend line, recent transactions, biggest expenses, recurring payment detection
 - **Transactions** — sortable columns, search/filter, merchant + original description columns, inline category editing, quick review, bulk categorise/review, inline notes, Export CSV
 - **Budgets** — set monthly limits per category with real-time progress bars and over-budget warnings
 - **Insights** — financial health score, month-over-month comparison, recurring payments, savings opportunity tips
@@ -304,6 +304,14 @@ Users can also add custom rules from the **Categories & Rules** page — these a
 - Use **Needs review** to focus on transactions categorized as `other`, low-confidence matches, or generic merchants such as card payments. **Quick review** steps through the current queue one transaction at a time.
 - Select multiple transactions to bulk change category, create grouped rules, apply existing rules to selected rows, or mark them reviewed.
 - Custom rules are deterministic and always run before built-in keyword rules. AI is not used for categorization.
+
+### Dashboard period analysis
+
+- On **Dashboard**, choose **This month**, **Last 3 months**, **Last 6 months**, **This year**, **Last 12 months**, or **Custom range**.
+- Custom range uses transaction dates, not import dates.
+- The selected period is saved in the browser and restored when returning to the dashboard.
+- Total income, total expense, net balance, category totals, merchant totals, recurring payments, and trend charts all use the selected date range.
+- Multi-month views keep empty months visible as zero and show month-by-month spending for top categories.
 
 ### Running the full typecheck
 

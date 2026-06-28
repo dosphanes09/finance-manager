@@ -5,7 +5,20 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { GetDashboardPeriod } from './getDashboardPeriod';
 
 export type GetDashboardParams = {
+period?: GetDashboardPeriod;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate?: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+endDate?: string;
+/**
+ * Backward-compatible YYYY-MM month filter.
+ */
 month?: string;
 };

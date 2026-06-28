@@ -33,7 +33,7 @@ Key files:
 
 - `src/App.tsx`: Wouter routing and React Query provider.
 - `src/components/layout.tsx`: Sidebar, mobile drawer, and navigation.
-- `src/pages/dashboard.tsx`: Dashboard KPIs, charts, recent transactions, recurring payments.
+- `src/pages/dashboard.tsx`: Period-filtered dashboard KPIs, charts, category trends, recent transactions, recurring payments.
 - `src/pages/transactions.tsx`: Transaction table, filters, inline category editing, bulk actions, quick review, rule creation from rows.
 - `src/pages/upload.tsx`: Statement upload, preview, duplicate warning, import confirmation.
 - `src/pages/categories.tsx`: Built-in categories, manual custom rules, rule suggestions, apply rules.
@@ -301,17 +301,31 @@ If the database is unavailable during preview, parsing still succeeds and the re
 
 Dashboard data is served by `GET /api/dashboard`.
 
+The endpoint accepts period filters:
+
+- `period=this_month`
+- `period=last_3_months`
+- `period=last_6_months`
+- `period=this_year`
+- `period=last_12_months`
+- `period=custom&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD`
+
+The older `month=YYYY-MM` query is retained for compatibility and is converted into a custom date range internally.
+
 The API aggregates:
 
 - income, expenses, net balance, transaction count
 - spending by category
+- category percentages and month-by-month category trends
 - top merchants
-- monthly trends
+- monthly trends with zero-filled empty months
 - recent transactions
 - biggest expenses
 - recurring payments based on merchants seen across months
 
-The frontend displays this data using Recharts and summary cards.
+All dashboard filtering uses `transactions.date`, not import timestamps. Period math and grouping live in `artifacts/api-server/src/lib/dashboard-periods.ts`.
+
+The frontend persists the selected period and custom dates in browser `localStorage`, then displays the response using Recharts, summary cards, and compact category trend tables.
 
 ## 17. API Endpoints
 

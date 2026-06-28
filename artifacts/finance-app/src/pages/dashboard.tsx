@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useGetDashboard, getGetDashboardQueryKey, useListMonths } from "@workspace/api-client-react";
+import { useGetDashboard, getGetDashboardQueryKey } from "@workspace/api-client-react";
+import type { GetDashboardParams, GetDashboardPeriod } from "@workspace/api-client-react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,48 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 function getCategoryColor(category: string, index: number) {
   return CATEGORY_COLORS[category] ?? `hsl(${(index * 47) % 360}, 70%, 55%)`;
+}
+
+const PERIOD_STORAGE_KEY = "finance-dashboard-period";
+const CUSTOM_START_STORAGE_KEY = "finance-dashboard-custom-start";
+const CUSTOM_END_STORAGE_KEY = "finance-dashboard-custom-end";
+
+const PERIOD_OPTIONS: Array<{ value: GetDashboardPeriod; label: string }> = [
+  { value: "this_month", label: "This month" },
+  { value: "last_3_months", label: "Last 3 months" },
+  { value: "last_6_months", label: "Last 6 months" },
+  { value: "this_year", label: "This year" },
+  { value: "last_12_months", label: "Last 12 months" },
+  { value: "custom", label: "Custom range" },
+];
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getCurrentMonthStart() {
+  const now = new Date();
+  return toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function getToday() {
+  return toDateInputValue(new Date());
+}
+
+function getStoredValue(key: string, fallback: string) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  return window.localStorage.getItem(key) || fallback;
+}
+
+function getStoredPeriod() {
+  const stored = getStoredValue(PERIOD_STORAGE_KEY, "this_month");
+  return PERIOD_OPTIONS.some((option) => option.value === stored) ? (stored as GetDashboardPeriod) : "this_month";
 }
 
 function SummaryCard({ title, amount, icon, isCurrency = false, subtitle }: {
@@ -44,42 +88,104 @@ function SummaryCard({ title, amount, icon, isCurrency = false, subtitle }: {
 }
 
 export default function Dashboard() {
-  const { data: months } = useListMonths();
-  const [selectedMonth, setSelectedMonth] = useState<string>("");
-  const currentMonth = selectedMonth || (months && months.length > 0 ? months[0] : "");
+  const [period, setPeriod] = useState<GetDashboardPeriod>(getStoredPeriod);
+  const [customStartDate, setCustomStartDate] = useState(() =>
+    getStoredValue(CUSTOM_START_STORAGE_KEY, getCurrentMonthStart()),
+  );
+  const [customEndDate, setCustomEndDate] = useState(() => getStoredValue(CUSTOM_END_STORAGE_KEY, getToday()));
+
+  useEffect(() => {
+    window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
+  }, [period]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_START_STORAGE_KEY, customStartDate);
+  }, [customStartDate]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOM_END_STORAGE_KEY, customEndDate);
+  }, [customEndDate]);
+
+  const isCustomRangeInvalid = period === "custom" && (!customStartDate || !customEndDate || customStartDate > customEndDate);
+  const dashboardParams = useMemo<GetDashboardParams>(() => {
+    if (period === "custom") {
+      return { period, startDate: customStartDate, endDate: customEndDate };
+    }
+
+    return { period };
+  }, [customEndDate, customStartDate, period]);
 
   const { data: d, isLoading } = useGetDashboard(
-    { month: currentMonth },
-    { query: { queryKey: getGetDashboardQueryKey({ month: currentMonth }), enabled: !!currentMonth } }
+    dashboardParams,
+    {
+      query: {
+        queryKey: getGetDashboardQueryKey(dashboardParams),
+        enabled: !isCustomRangeInvalid,
+      },
+    },
   );
 
   const emptyState = (
     <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
-      <p className="text-muted-foreground text-sm">No data for this month.</p>
+      <p className="text-muted-foreground text-sm">No data for this period.</p>
       <Link href="/upload">
         <Button variant="outline" size="sm">Upload a statement</Button>
       </Link>
     </div>
   );
 
+  const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "This month";
+  const categoryTrendRows = d?.categoryMonthlyTrends.filter((row) => row.months.some((month) => month.amount > 0)).slice(0, 6) ?? [];
+  const showCategoryTrend = (d?.monthlyTrends.length ?? 0) > 1 && categoryTrendRows.length > 0;
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" data-testid="dashboard-title">Dashboard</h1>
-          <p className="text-muted-foreground mt-0.5 text-sm">Your financial overview</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">
+            {d ? `${selectedPeriodLabel}: ${formatDate(d.startDate)} - ${formatDate(d.endDate)}` : "Your financial overview"}
+          </p>
         </div>
-        {months && months.length > 0 && (
-          <Select value={currentMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="w-36" data-testid="month-selector">
-              <SelectValue placeholder="Select month" />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <Select value={period} onValueChange={(value) => setPeriod(value as GetDashboardPeriod)}>
+            <SelectTrigger className="w-full sm:w-44" data-testid="period-selector">
+              <SelectValue placeholder="Select period" />
             </SelectTrigger>
             <SelectContent>
-              {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+              {PERIOD_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
-        )}
+          {period === "custom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                aria-label="Custom start date"
+                type="date"
+                value={customStartDate}
+                onChange={(event) => setCustomStartDate(event.target.value)}
+                className="w-full sm:w-36"
+              />
+              <Input
+                aria-label="Custom end date"
+                type="date"
+                value={customEndDate}
+                onChange={(event) => setCustomEndDate(event.target.value)}
+                className="w-full sm:w-36"
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      {isCustomRangeInvalid && (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="py-3 text-sm text-destructive">
+            Choose a valid custom date range.
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading || !d ? (
         <div className="space-y-6">
@@ -105,25 +211,48 @@ export default function Dashboard() {
           {/* Charts Row */}
           <div className="grid gap-6 md:grid-cols-2">
             <Card className="shadow-sm">
-              <CardHeader><CardTitle>Spending by Category</CardTitle></CardHeader>
-              <CardContent className="h-[280px]">
+              <CardHeader>
+                <CardTitle>Spending by Category</CardTitle>
+                <CardDescription>Total and share for the selected period</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                 {d.categoryBreakdown.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={d.categoryBreakdown} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                        paddingAngle={2} dataKey="amount" nameKey="category">
-                        {d.categoryBreakdown.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={getCategoryColor(entry.category, index)} />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip
-                        formatter={(value: number, name: string) => [formatCurrency(value), name]}
-                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                      />
-                      <Legend iconType="circle" iconSize={8} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : emptyState}
+                  <>
+                    <div className="h-[260px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={d.categoryBreakdown} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
+                            paddingAngle={2} dataKey="amount" nameKey="category">
+                            {d.categoryBreakdown.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={getCategoryColor(entry.category, index)} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip
+                            formatter={(value: number, name: string) => [formatCurrency(value), name]}
+                            contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
+                          />
+                          <Legend iconType="circle" iconSize={8} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-2">
+                      {d.categoryBreakdown.slice(0, 7).map((row, index) => (
+                        <div key={row.category} className="flex items-center justify-between gap-3 border-b pb-2 last:border-0">
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: getCategoryColor(row.category, index) }} />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{row.category}</p>
+                              <p className="text-xs text-muted-foreground">{row.percentage}% share</p>
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-sm font-mono">{formatCurrency(row.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="lg:col-span-2 h-[260px]">{emptyState}</div>
+                )}
               </CardContent>
             </Card>
 
@@ -147,7 +276,10 @@ export default function Dashboard() {
             </Card>
 
             <Card className="md:col-span-2 shadow-sm">
-              <CardHeader><CardTitle>Income vs Expenses Trend</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle>Income vs Expenses Trend</CardTitle>
+                <CardDescription>Empty months are shown as zero.</CardDescription>
+              </CardHeader>
               <CardContent className="h-[220px]">
                 {d.monthlyTrends.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -165,6 +297,41 @@ export default function Dashboard() {
                 ) : emptyState}
               </CardContent>
             </Card>
+
+            {showCategoryTrend && (
+              <Card className="md:col-span-2 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Category Trend</CardTitle>
+                  <CardDescription>Month-by-month spending for top categories</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs text-muted-foreground">
+                          <th className="py-2 pr-3 font-medium">Category</th>
+                          {d.monthlyTrends.map((month) => (
+                            <th key={month.month} className="px-3 py-2 text-right font-medium">{month.month}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {categoryTrendRows.map((row) => (
+                          <tr key={row.category} className="border-b last:border-0">
+                            <td className="py-2 pr-3 font-medium">{row.category}</td>
+                            {row.months.map((month) => (
+                              <td key={`${row.category}-${month.month}`} className="px-3 py-2 text-right font-mono">
+                                {formatCurrency(month.amount)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Bottom Row */}

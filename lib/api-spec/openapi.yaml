@@ -287,10 +287,26 @@ paths:
     get:
       operationId: getDashboard
       tags: [dashboard]
-      summary: Get dashboard data for a given month
+      summary: Get dashboard data for a selected transaction-date period
       parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [this_month, last_3_months, last_6_months, this_year, last_12_months, custom]
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
         - name: month
           in: query
+          description: Backward-compatible YYYY-MM month filter.
           schema:
             type: string
       responses:
@@ -856,10 +872,36 @@ components:
           type: number
       required: [month, expenses, income]
 
+    CategoryTrendMonth:
+      type: object
+      properties:
+        month:
+          type: string
+        amount:
+          type: number
+      required: [month, amount]
+
+    CategoryMonthlyTrend:
+      type: object
+      properties:
+        category:
+          type: string
+        months:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryTrendMonth"
+      required: [category, months]
+
     DashboardData:
       type: object
       properties:
         month:
+          type: string
+        period:
+          type: string
+        startDate:
+          type: string
+        endDate:
           type: string
         totalExpenses:
           type: number
@@ -883,6 +925,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MonthlyTrend"
+        categoryMonthlyTrends:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryMonthlyTrend"
         recentTransactions:
           type: array
           items:
@@ -895,7 +941,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MerchantSummary"
-      required: [month, totalExpenses, totalIncome, netBalance, transactionCount, topCategory, categoryBreakdown, topMerchants, monthlyTrends, recentTransactions, biggestExpenses, recurringPayments]
+      required: [month, period, startDate, endDate, totalExpenses, totalIncome, netBalance, transactionCount, topCategory, categoryBreakdown, topMerchants, monthlyTrends, categoryMonthlyTrends, recentTransactions, biggestExpenses, recurringPayments]
 
     Category:
       type: object
