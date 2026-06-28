@@ -315,7 +315,16 @@ Same columns as CSV. The parser reads the first worksheet.
 
 ### PDF
 
-Extracts lines containing a date pattern and an amount. Works best with text-based (not scanned) PDFs. Quality varies by bank format.
+Extracts selectable PDF text and groups transaction blocks across continuation lines. The parser supports Turkish-style dates and amounts, debit/credit columns, and balance columns. Works with text-based PDFs only; scanned documents are not OCR'd.
+
+For selectable PDFs that fail to parse, enable backend diagnostics:
+
+```powershell
+$env:PDF_PARSE_DEBUG="true"
+pnpm --filter @workspace/api-server run dev
+```
+
+You can also send `?pdfDebug=1` on `/api/upload/preview` or `/api/upload`. Debug mode saves extracted PDF text to a temp file, logs the first 100 extracted lines, and returns parser diagnostics when no transaction rows match. It does not use OCR.
 
 ---
 

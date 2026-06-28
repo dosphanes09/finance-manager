@@ -9,8 +9,11 @@ export interface HealthStatus {
   status: string;
 }
 
+export type ErrorResponseDetails = { [key: string]: unknown };
+
 export interface ErrorResponse {
   error: string;
+  details?: ErrorResponseDetails;
 }
 
 export interface Transaction {

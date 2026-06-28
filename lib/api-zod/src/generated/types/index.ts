@@ -17,6 +17,7 @@ export * from './dashboardData';
 export * from './deleteDataResult';
 export * from './demoResult';
 export * from './errorResponse';
+export * from './errorResponseDetails';
 export * from './getDashboardParams';
 export * from './getInsightsParams';
 export * from './healthStatus';

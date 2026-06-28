@@ -5,7 +5,9 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ErrorResponseDetails } from './errorResponseDetails';
 
 export interface ErrorResponse {
   error: string;
+  details?: ErrorResponseDetails;
 }

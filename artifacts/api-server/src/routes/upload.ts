@@ -1,9 +1,15 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { db, transactionsTable } from "@workspace/db";
-import { parseCsv, parseExcel, parsePdf } from "../lib/parsers";
+import {
+  parseCsv,
+  parseExcel,
+  parsePdf,
+  StatementParseError,
+  type PdfParseOptions,
+} from "../lib/parsers";
 import { categorize } from "../lib/categorizer";
 import {
   UploadStatementResponse,
@@ -43,11 +49,53 @@ const upload = multer({
 
 const router: IRouter = Router();
 
-async function parseFile(filePath: string, ext: string) {
+async function parseFile(filePath: string, ext: string, options: PdfParseOptions = {}) {
   if (ext === ".csv") return parseCsv(filePath);
   if (ext === ".xlsx" || ext === ".xls") return parseExcel(filePath);
-  if (ext === ".pdf") return parsePdf(filePath);
+  if (ext === ".pdf") return parsePdf(filePath, options);
   throw new Error("Unsupported file type");
+}
+
+function isDebugValue(value: unknown): boolean {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (typeof raw !== "string") return false;
+  return ["1", "true", "yes", "pdf"].includes(raw.toLowerCase());
+}
+
+function shouldDebugPdf(req: Request, ext: string): boolean {
+  if (ext !== ".pdf") return false;
+
+  return (
+    process.env.PDF_PARSE_DEBUG === "1" ||
+    process.env.PDF_PARSE_DEBUG?.toLowerCase() === "true" ||
+    isDebugValue(req.query["debug"]) ||
+    isDebugValue(req.query["pdfDebug"]) ||
+    isDebugValue(req.headers["x-pdf-debug"])
+  );
+}
+
+function parseErrorPayload(err: unknown, fallback: string) {
+  if (err instanceof StatementParseError) {
+    return {
+      error: err.message,
+      details: err.details,
+    };
+  }
+
+  return { error: fallback };
+}
+
+function logParseFailure(
+  req: Request,
+  err: unknown,
+  message: string,
+) {
+  if (err instanceof StatementParseError) {
+    req.log.warn({ details: err.details }, message);
+    return;
+  }
+
+  req.log.error({ err }, message);
 }
 
 async function detectDuplicates(
@@ -77,9 +125,10 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
+  const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
 
   try {
-    const parsed = await parseFile(filePath, ext);
+    const parsed = await parseFile(filePath, ext, pdfOptions);
 
     if (parsed.length === 0) {
       res.status(400).json({ error: "No transactions could be parsed from this file. Please check the format." });
@@ -107,8 +156,8 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
       PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors: [] })
     );
   } catch (err) {
-    req.log.error({ err }, "Failed to parse statement for preview");
-    res.status(400).json({ error: "Failed to parse file. Please ensure it is a valid bank statement." });
+    logParseFailure(req, err, "Failed to parse statement for preview");
+    res.status(400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
   } finally {
     await fs.unlink(filePath).catch(() => {});
   }
@@ -162,9 +211,10 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
+  const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
 
   try {
-    const parsed = await parseFile(filePath, ext);
+    const parsed = await parseFile(filePath, ext, pdfOptions);
 
     if (parsed.length === 0) {
       res.status(400).json({ error: "No transactions could be parsed from this file. Please check the format." });
@@ -195,8 +245,8 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
       })
     );
   } catch (err) {
-    req.log.error({ err }, "Failed to parse statement");
-    res.status(400).json({ error: "Failed to parse file. Please ensure it is a valid bank statement." });
+    logParseFailure(req, err, "Failed to parse statement");
+    res.status(400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
   } finally {
     await fs.unlink(filePath).catch(() => {});
   }

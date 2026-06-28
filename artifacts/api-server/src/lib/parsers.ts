@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import Papa from "papaparse";
@@ -11,6 +13,76 @@ export interface ParsedTransaction {
   type: "debit" | "credit";
 }
 
+export interface PdfDiagnosticLine {
+  lineNumber: number;
+  text: string;
+}
+
+export interface PdfParseDiagnostics {
+  reason: string;
+  textExtractedSuccessfully: boolean;
+  lineCount: number;
+  transactionBlockCount: number;
+  matchedTransactionCount: number;
+  possibleDateLines: PdfDiagnosticLine[];
+  possibleAmountLines: PdfDiagnosticLine[];
+  possibleTransactionLineCandidates: PdfDiagnosticLine[];
+  rejectedBlockSummary: Record<string, number>;
+  suggestedBankFormatIssue: string;
+  debugTextPath?: string;
+}
+
+export interface PdfParseOptions {
+  debug?: boolean;
+  debugDir?: string;
+  debugTextPath?: string;
+  logger?: {
+    info: (obj: unknown, msg?: string) => void;
+    warn: (obj: unknown, msg?: string) => void;
+  };
+}
+
+interface TransactionBlock {
+  startLine: number;
+  lines: string[];
+}
+
+interface AmountCandidate {
+  raw: string;
+  value: number;
+  index: number;
+}
+
+interface ColumnLayout {
+  hasBalanceColumn: boolean;
+  hasDebitCreditColumns: boolean;
+  debitBeforeCredit: boolean;
+}
+
+interface RejectedBlock {
+  startLine: number;
+  reason: string;
+  sample: string;
+}
+
+interface PickedAmount {
+  candidate: AmountCandidate;
+  role?: "debit" | "credit";
+}
+
+export class StatementParseError extends Error {
+  readonly details: PdfParseDiagnostics;
+
+  constructor(message: string, details: PdfParseDiagnostics) {
+    super(message);
+    this.name = "StatementParseError";
+    this.details = details;
+  }
+}
+
+const DATE_PATTERN = /\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b/g;
+const AMOUNT_PATTERN = /(?<![\d.,])[-+]?\s*(?:\u20ba\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})(?:\s*(?:TL|TRY|\u20ba))?(?![\d.,])/gi;
+
 function maskSensitiveData(text: string): string {
   return text
     .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b/g, "****")
@@ -20,69 +92,133 @@ function maskSensitiveData(text: string): string {
     .trim();
 }
 
+function normalizeForMatching(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0131/g, "i")
+    .replace(/\u011f/g, "g")
+    .replace(/\u015f/g, "s")
+    .replace(/\u00e7/g, "c")
+    .replace(/\u00f6/g, "o")
+    .replace(/\u00fc/g, "u");
+}
+
 function parseDate(raw: string): string | null {
-  if (!raw) return null;
-  raw = raw.trim();
-  const formats = [
-    /^(\d{4})-(\d{2})-(\d{2})$/,
-    /^(\d{2})\/(\d{2})\/(\d{4})$/,
-    /^(\d{2})-(\d{2})-(\d{4})$/,
-    /^(\d{2})\.(\d{2})\.(\d{4})$/,
-  ];
-  for (const fmt of formats) {
-    const m = raw.match(fmt);
-    if (m) {
-      if (fmt === formats[0]) return `${m[1]}-${m[2]}-${m[3]}`;
-      return `${m[3]}-${m[2]}-${m[1]}`;
-    }
+  const token = raw.match(DATE_PATTERN)?.[0]?.trim();
+  if (!token) return null;
+
+  const ymd = token.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (ymd) return buildIsoDate(Number(ymd[1]), Number(ymd[2]), Number(ymd[3]));
+
+  const dmy = token.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (dmy) {
+    const year = normalizeYear(Number(dmy[3]));
+    return buildIsoDate(year, Number(dmy[2]), Number(dmy[1]));
   }
-  const d = new Date(raw);
-  if (!isNaN(d.getTime())) {
-    return d.toISOString().split("T")[0];
-  }
+
   return null;
 }
 
+function normalizeYear(year: number): number {
+  if (year >= 100) return year;
+  return year >= 70 ? 1900 + year : 2000 + year;
+}
+
+function buildIsoDate(year: number, month: number, day: number): string | null {
+  if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function parseSignedAmount(raw: string | number): number {
+  if (typeof raw === "number") return raw;
+
+  let value = String(raw)
+    .replace(/\u00a0/g, " ")
+    .replace(/TL|TRY/gi, "")
+    .replace(/\u20ba/g, "")
+    .trim();
+
+  const isNegative = value.includes("(") || /^\s*-/.test(value);
+  value = value.replace(/[()+-]/g, "").replace(/\s+/g, "");
+
+  const lastComma = value.lastIndexOf(",");
+  const lastDot = value.lastIndexOf(".");
+  const decimalSeparator = lastComma > lastDot ? "," : ".";
+
+  const normalized =
+    decimalSeparator === ","
+      ? value.replace(/\./g, "").replace(",", ".")
+      : value.replace(/,/g, "");
+
+  const parsed = Number.parseFloat(normalized);
+  if (Number.isNaN(parsed)) return 0;
+  return isNegative ? -parsed : parsed;
+}
+
 function parseAmount(raw: string | number): number {
-  if (typeof raw === "number") return Math.abs(raw);
-  const cleaned = String(raw).replace(/[^0-9.,\-]/g, "").replace(",", ".");
-  return Math.abs(parseFloat(cleaned) || 0);
+  return Math.abs(parseSignedAmount(raw));
+}
+
+function includesAny(haystack: string, needles: string[]): boolean {
+  return needles.some((needle) => haystack.includes(needle));
 }
 
 function detectType(amount: string | number, typeHint?: string): "debit" | "credit" {
-  if (typeHint) {
-    const t = String(typeHint).toLowerCase();
-    if (t.includes("credit") || t.includes("in") || t.includes("income")) return "credit";
-    if (t.includes("debit") || t.includes("out") || t.includes("expense")) return "debit";
+  const hint = normalizeForMatching(`${typeHint ?? ""} ${typeof amount === "string" ? amount : ""}`);
+
+  if (includesAny(hint, ["credit", "income", "alacak", "gelen", "yatan", "maas", "iade", "refund"])) {
+    return "credit";
   }
-  const num = typeof amount === "number" ? amount : parseFloat(String(amount).replace(/[^0-9.\-]/g, ""));
-  return num < 0 ? "credit" : "debit";
+
+  if (includesAny(hint, ["debit", "out", "expense", "borc", "giden", "cekilen", "odeme", "harcama", "alisveris"])) {
+    return "debit";
+  }
+
+  if (typeof amount === "string") {
+    const trimmed = amount.replace(/TL|TRY|\u20ba/gi, "").trim();
+    if (trimmed.startsWith("-") || trimmed.startsWith("(")) return "debit";
+    if (trimmed.startsWith("+")) return "credit";
+  }
+
+  return "debit";
 }
 
 function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
   if (rows.length === 0) return [];
 
-  const keys = Object.keys(rows[0]).map((k) => k.trim().toLowerCase());
+  const keys = Object.keys(rows[0]).map((k) => normalizeForMatching(k.trim()));
 
-  const dateKey = keys.find((k) => k.includes("date") || k === "dt") ?? keys[0];
+  const dateKey = keys.find((k) => k.includes("date") || k.includes("tarih") || k === "dt") ?? keys[0];
   const descKey = keys.find((k) =>
     k.includes("description") || k.includes("narration") || k.includes("merchant") ||
-    k.includes("details") || k.includes("particulars") || k.includes("memo") || k.includes("reference")
+    k.includes("details") || k.includes("particulars") || k.includes("memo") || k.includes("reference") ||
+    k.includes("aciklama") || k.includes("islem")
   ) ?? keys[1];
   const amountKey = keys.find((k) =>
     k === "amount" || k === "value" || k === "debit" || k === "credit" ||
-    k.includes("amount") || k.includes("sum")
+    k.includes("amount") || k.includes("sum") || k.includes("tutar") || k.includes("borc") || k.includes("alacak")
   ) ?? keys[2];
-  const typeKey = keys.find((k) => k === "type" || k === "dr/cr" || k === "debit/credit" || k.includes("transaction type"));
-  const creditKey = keys.find((k) => k === "credit" || k === "credits" || k.includes("credit amount"));
-  const debitKey = keys.find((k) => k === "debit" || k === "debits" || k.includes("debit amount"));
+  const typeKey = keys.find((k) => k === "type" || k === "dr/cr" || k === "debit/credit" || k.includes("transaction type") || k.includes("islem tipi"));
+  const creditKey = keys.find((k) => k === "credit" || k === "credits" || k.includes("credit amount") || k.includes("alacak"));
+  const debitKey = keys.find((k) => k === "debit" || k === "debits" || k.includes("debit amount") || k.includes("borc"));
 
   const results: ParsedTransaction[] = [];
 
   for (const row of rows) {
     const rawKeys = Object.keys(row);
     const get = (key: string): string => {
-      const found = rawKeys.find((k) => k.trim().toLowerCase() === key);
+      const found = rawKeys.find((k) => normalizeForMatching(k.trim()) === key);
       return found ? String(row[found] ?? "").trim() : "";
     };
 
@@ -94,7 +230,7 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
     if (!rawDesc) continue;
 
     const description = maskSensitiveData(rawDesc);
-    const merchant = description.split(/\s+/).slice(0, 4).join(" ");
+    const merchant = extractMerchant(description);
 
     let amount = 0;
     let type: "debit" | "credit" = "debit";
@@ -143,37 +279,336 @@ export async function parseExcel(filePath: string): Promise<ParsedTransaction[]>
   return normalizeRows(rows);
 }
 
-export async function parsePdf(filePath: string): Promise<ParsedTransaction[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfParse: (buf: Buffer) => Promise<{ text: string }> = (await import("pdf-parse" as string)) as any;
+export async function parsePdf(filePath: string, options: PdfParseOptions = {}): Promise<ParsedTransaction[]> {
   const buffer = await fs.readFile(filePath);
-  const data = await pdfParse(buffer);
-  const lines = data.text.split("\n").map((l: string) => l.trim()).filter(Boolean);
+  const { PDFParse } = (await import("pdf-parse" as string)) as {
+    PDFParse: new (params: { data: Buffer }) => {
+      getText: () => Promise<{ text: string }>;
+      destroy: () => Promise<void>;
+    };
+  };
 
+  const parser = new PDFParse({ data: buffer });
+  let rawText = "";
+
+  try {
+    const data = await parser.getText();
+    rawText = data.text ?? "";
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
+
+  const lines = splitPdfLines(rawText);
+  let debugTextPath = options.debugTextPath;
+
+  if (options.debug) {
+    debugTextPath = await writePdfDebugText(rawText, options.debugDir);
+    options.logger?.info(
+      {
+        debugTextPath,
+        lineCount: lines.length,
+        first100Lines: lines.slice(0, 100),
+      },
+      "PDF parse debug: extracted selectable text",
+    );
+  }
+
+  try {
+    return parsePdfText(rawText, { ...options, debugTextPath });
+  } catch (err) {
+    if (err instanceof StatementParseError) {
+      options.logger?.warn({ details: err.details }, "PDF parse diagnostics: no transaction rows matched");
+    }
+    throw err;
+  }
+}
+
+export function parsePdfText(rawText: string, options: PdfParseOptions = {}): ParsedTransaction[] {
+  const lines = splitPdfLines(rawText);
+  const blocks = buildTransactionBlocks(lines);
+  const layout = detectColumnLayout(lines);
+  const rejectedBlocks: RejectedBlock[] = [];
   const transactions: ParsedTransaction[] = [];
-  const datePattern = /\b(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{4}|\d{4}[\/\-\.]\d{2}[\/\-\.]\d{2}|\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2})\b/;
-  const amountPattern = /[-+]?\d{1,3}(?:[,.\s]\d{3})*(?:[.,]\d{2})/g;
 
-  for (const line of lines) {
-    const dateMatch = line.match(datePattern);
-    if (!dateMatch) continue;
-    const date = parseDate(dateMatch[0]);
-    if (!date) continue;
+  if (rawText.trim().length === 0) {
+    throw new StatementParseError(
+      "PDF text extraction returned no selectable text.",
+      buildPdfDiagnostics(lines, blocks, rejectedBlocks, options.debugTextPath, "No selectable text was extracted from the PDF."),
+    );
+  }
 
-    const amounts = line.match(amountPattern);
-    if (!amounts || amounts.length === 0) continue;
+  for (const block of blocks) {
+    const parsed = parsePdfTransactionBlock(block, layout);
+    if ("transaction" in parsed) {
+      transactions.push(parsed.transaction);
+    } else {
+      rejectedBlocks.push(parsed);
+    }
+  }
 
-    const rawAmount = amounts[amounts.length - 1];
-    const amount = parseAmount(rawAmount);
-    if (amount === 0) continue;
-
-    const descPart = line.replace(dateMatch[0], "").replace(amountPattern, "").trim();
-    const description = maskSensitiveData(descPart || "Transaction");
-    const merchant = description.split(/\s+/).slice(0, 4).join(" ");
-    const type = line.includes("-") ? "debit" : "credit";
-
-    transactions.push({ date, merchant, description, amount, type });
+  if (transactions.length === 0) {
+    throw new StatementParseError(
+      "PDF text extracted successfully but no transaction rows matched.",
+      buildPdfDiagnostics(lines, blocks, rejectedBlocks, options.debugTextPath),
+    );
   }
 
   return transactions;
+}
+
+function splitPdfLines(rawText: string): string[] {
+  return rawText
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function findDateTokens(text: string): string[] {
+  return Array.from(text.matchAll(DATE_PATTERN), (match) => match[0]);
+}
+
+function extractAmountCandidates(text: string): AmountCandidate[] {
+  return Array.from(text.matchAll(AMOUNT_PATTERN), (match) => ({
+    raw: match[0],
+    value: parseSignedAmount(match[0]),
+    index: match.index ?? 0,
+  }));
+}
+
+function buildTransactionBlocks(lines: string[]): TransactionBlock[] {
+  const blocks: TransactionBlock[] = [];
+  let current: TransactionBlock | null = null;
+
+  lines.forEach((line, index) => {
+    const dateTokens = findDateTokens(line);
+    const hasDate = dateTokens.length > 0;
+    const hasAmount = extractAmountCandidates(line).length > 0;
+
+    if (hasDate && !isLikelyStatementPeriodLine(line) && (dateTokens.length === 1 || hasAmount)) {
+      if (current) blocks.push(current);
+      current = { startLine: index + 1, lines: [line] };
+      return;
+    }
+
+    if (current) current.lines.push(line);
+  });
+
+  if (current) blocks.push(current);
+  return blocks;
+}
+
+function isLikelyStatementPeriodLine(line: string): boolean {
+  const normalized = normalizeForMatching(line);
+  const dateCount = findDateTokens(line).length;
+  return (
+    dateCount > 1 &&
+    includesAny(normalized, ["donem", "tarih araligi", "hesap ozeti", "statement period", "account statement"])
+  );
+}
+
+function detectColumnLayout(lines: string[]): ColumnLayout {
+  const normalized = normalizeForMatching(lines.slice(0, 100).join(" "));
+  const debitIndex = firstIndexOfAny(normalized, ["borc", "debit", "cekilen", "gider"]);
+  const creditIndex = firstIndexOfAny(normalized, ["alacak", "credit", "yatan", "gelir"]);
+  const balanceIndex = firstIndexOfAny(normalized, ["bakiye", "balance"]);
+
+  return {
+    hasBalanceColumn: balanceIndex >= 0,
+    hasDebitCreditColumns: debitIndex >= 0 && creditIndex >= 0,
+    debitBeforeCredit: debitIndex === -1 || creditIndex === -1 ? true : debitIndex < creditIndex,
+  };
+}
+
+function firstIndexOfAny(text: string, needles: string[]): number {
+  const indexes = needles.map((needle) => text.indexOf(needle)).filter((index) => index >= 0);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function parsePdfTransactionBlock(
+  block: TransactionBlock,
+  layout: ColumnLayout,
+): { transaction: ParsedTransaction } | RejectedBlock {
+  const blockText = block.lines.join(" ");
+  const dateToken = findDateTokens(blockText)[0];
+  const date = dateToken ? parseDate(dateToken) : null;
+
+  if (!date) return rejectBlock(block, "invalid_or_missing_date");
+
+  const amounts = extractAmountCandidates(blockText);
+  if (amounts.length === 0) return rejectBlock(block, "missing_amount");
+
+  const picked = pickTransactionAmount(amounts, layout);
+  if (!picked) return rejectBlock(block, "only_zero_or_balance_amounts");
+
+  const description = buildPdfDescription(blockText);
+  if (!description) return rejectBlock(block, "missing_description");
+
+  const type = picked.role ?? detectType(picked.candidate.raw, description);
+  const amount = Math.abs(picked.candidate.value);
+
+  if (amount === 0) return rejectBlock(block, "zero_amount");
+
+  return {
+    transaction: {
+      date,
+      merchant: extractMerchant(description),
+      description,
+      amount,
+      type,
+    },
+  };
+}
+
+function rejectBlock(block: TransactionBlock, reason: string): RejectedBlock {
+  return {
+    startLine: block.startLine,
+    reason,
+    sample: block.lines.join(" ").slice(0, 240),
+  };
+}
+
+function pickTransactionAmount(
+  candidates: AmountCandidate[],
+  layout: ColumnLayout,
+): PickedAmount | null {
+  const hasLikelyBalance = layout.hasBalanceColumn || candidates.length >= 2;
+  const dataCandidates = hasLikelyBalance && candidates.length > 1
+    ? candidates.slice(0, -1)
+    : candidates;
+
+  if (layout.hasDebitCreditColumns && dataCandidates.length >= 2) {
+    const debitCandidate = layout.debitBeforeCredit ? dataCandidates[0] : dataCandidates[1];
+    const creditCandidate = layout.debitBeforeCredit ? dataCandidates[1] : dataCandidates[0];
+
+    if (Math.abs(debitCandidate.value) > 0) return { candidate: debitCandidate, role: "debit" };
+    if (Math.abs(creditCandidate.value) > 0) return { candidate: creditCandidate, role: "credit" };
+  }
+
+  const signed = dataCandidates.find((candidate) => {
+    const raw = candidate.raw.replace(/TL|TRY|\u20ba/gi, "").trim();
+    return raw.startsWith("-") || raw.startsWith("+") || raw.startsWith("(");
+  });
+
+  if (signed && Math.abs(signed.value) > 0) {
+    return { candidate: signed, role: signed.value < 0 ? "debit" : "credit" };
+  }
+
+  const firstNonZero = dataCandidates.find((candidate) => Math.abs(candidate.value) > 0);
+  if (firstNonZero) return { candidate: firstNonZero };
+
+  return null;
+}
+
+function buildPdfDescription(blockText: string): string {
+  const withoutDateOrAmounts = blockText
+    .replace(DATE_PATTERN, " ")
+    .replace(AMOUNT_PATTERN, " ")
+    .replace(/\b(?:islem|i\u015flem|tarih|tarihi|aciklama|a\u00e7\u0131klama|borc|bor\u00e7|alacak|bakiye|debit|credit|balance|amount|tutar|tl|try)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return maskSensitiveData(withoutDateOrAmounts || "Transaction");
+}
+
+function extractMerchant(description: string): string {
+  const commonWords = new Set([
+    "islem",
+    "tarih",
+    "tarihi",
+    "aciklama",
+    "borc",
+    "alacak",
+    "bakiye",
+    "tutar",
+    "transaction",
+  ]);
+
+  const words = description
+    .split(/\s+/)
+    .filter((word) => word && !commonWords.has(normalizeForMatching(word)));
+
+  return words.slice(0, 4).join(" ") || "Transaction";
+}
+
+function buildPdfDiagnostics(
+  lines: string[],
+  blocks: TransactionBlock[],
+  rejectedBlocks: RejectedBlock[],
+  debugTextPath?: string,
+  overrideReason?: string,
+): PdfParseDiagnostics {
+  const possibleDateLines = findDiagnosticLines(lines, (line) => findDateTokens(line).length > 0);
+  const possibleAmountLines = findDiagnosticLines(lines, (line) => extractAmountCandidates(line).length > 0);
+  const possibleTransactionLineCandidates = findDiagnosticLines(
+    lines,
+    (line) => findDateTokens(line).length > 0 && extractAmountCandidates(line).length > 0,
+  );
+  const rejectedBlockSummary = summarizeRejectedBlocks(rejectedBlocks);
+
+  return {
+    reason: overrideReason ?? "PDF text extracted successfully but no transaction rows matched.",
+    textExtractedSuccessfully: lines.length > 0,
+    lineCount: lines.length,
+    transactionBlockCount: blocks.length,
+    matchedTransactionCount: 0,
+    possibleDateLines,
+    possibleAmountLines,
+    possibleTransactionLineCandidates,
+    rejectedBlockSummary,
+    suggestedBankFormatIssue: suggestBankFormatIssue(possibleDateLines, possibleAmountLines, possibleTransactionLineCandidates, rejectedBlockSummary),
+    ...(debugTextPath ? { debugTextPath } : {}),
+  };
+}
+
+function findDiagnosticLines(
+  lines: string[],
+  predicate: (line: string) => boolean,
+): PdfDiagnosticLine[] {
+  return lines
+    .map((line, index) => ({ lineNumber: index + 1, text: line }))
+    .filter((line) => predicate(line.text))
+    .slice(0, 25);
+}
+
+function summarizeRejectedBlocks(rejectedBlocks: RejectedBlock[]): Record<string, number> {
+  return rejectedBlocks.reduce<Record<string, number>>((summary, block) => {
+    summary[block.reason] = (summary[block.reason] ?? 0) + 1;
+    return summary;
+  }, {});
+}
+
+function suggestBankFormatIssue(
+  dateLines: PdfDiagnosticLine[],
+  amountLines: PdfDiagnosticLine[],
+  transactionLineCandidates: PdfDiagnosticLine[],
+  rejectedSummary: Record<string, number>,
+): string {
+  if (dateLines.length === 0) {
+    return "No supported transaction date pattern was detected. Expected dates like 01.06.2026, 01/06/2026, or 2026-06-01.";
+  }
+
+  if (amountLines.length === 0) {
+    return "Dates were detected, but no supported money values were found. Check whether the bank exports amounts without decimal cents or with a custom currency layout.";
+  }
+
+  if (transactionLineCandidates.length === 0) {
+    return "Dates and amounts were detected on separate lines. The parser grouped continuation lines, but no grouped block produced a valid transaction amount; check the bank's debit/credit/balance column order.";
+  }
+
+  if ((rejectedSummary.only_zero_or_balance_amounts ?? 0) > 0) {
+    return "Candidate rows looked like balance-only rows or debit/credit columns containing zeroes. Check whether the transaction amount appears after the balance column or uses a bank-specific column order.";
+  }
+
+  return "Date and amount-like lines were detected, but no transaction row could be selected. This likely needs a bank-specific layout rule for debit, credit, and balance columns.";
+}
+
+async function writePdfDebugText(rawText: string, debugDir = os.tmpdir()): Promise<string> {
+  await fs.mkdir(debugDir, { recursive: true });
+  const filePath = path.join(
+    debugDir,
+    `financeanalyzerpro-pdf-debug-${Date.now()}-${crypto.randomUUID()}.txt`,
+  );
+  await fs.writeFile(filePath, rawText, "utf-8");
+  return filePath;
 }
