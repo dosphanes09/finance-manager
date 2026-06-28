@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg",
+    "42crunch.vscode-openapi",
+    "yoavbls.pretty-ts-errors",
+    "christian-kohler.npm-intellisense",
+    "ZixuanChen.vitest-explorer"
+  ]
+}

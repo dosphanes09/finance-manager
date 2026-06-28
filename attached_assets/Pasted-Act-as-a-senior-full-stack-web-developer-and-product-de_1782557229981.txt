@@ -1,0 +1,127 @@
+Act as a senior full-stack web developer and product designer.
+
+The current finance tracker app works, but I want you to upgrade it into a polished, production-quality personal finance analytics platform.
+
+Improve the app in these areas:
+
+1. UI/UX Upgrade
+- Redesign the interface with a modern SaaS dashboard style.
+- Add a clean sidebar navigation.
+- Add pages: Dashboard, Transactions, Upload Statement, Categories, Budgets, Insights, Settings.
+- Make the app fully responsive for desktop and mobile.
+- Use cards, charts, badges, filters, empty states, loading states, and error states.
+- Improve spacing, typography, colors, and overall visual hierarchy.
+
+2. Dashboard
+Create a powerful dashboard showing:
+- Total monthly spending
+- Total income
+- Net balance
+- Top spending category
+- Spending by category chart
+- Monthly spending trend chart
+- Top merchants
+- Recent transactions
+- Biggest expenses
+- Subscription-like recurring payments
+
+3. Transactions Page
+Improve the transaction table:
+- Search transactions
+- Filter by date range
+- Filter by category
+- Filter by income/expense
+- Sort by amount/date/category
+- Edit category manually
+- Add notes to transactions
+- Delete transaction
+- Bulk categorize selected transactions
+- Export filtered transactions as CSV
+
+4. Statement Upload
+Improve the upload flow:
+- Support CSV and Excel first.
+- Keep PDF support if already implemented, but make it optional.
+- Show a preview before saving transactions.
+- Detect duplicate transactions before import.
+- Ask the user to confirm before importing.
+- Show parsing errors clearly.
+- Do not store raw uploaded files permanently.
+
+5. Smart Categorization
+Add rule-based categorization before AI:
+- Migros, Carrefour, A101, BİM → Groceries
+- Yemeksepeti, GetirYemek, restaurants, cafes → Food & Dining
+- Obilet, Uber, taxi, metro, fuel → Transportation
+- Netflix, Spotify, YouTube, Apple, Google → Subscriptions
+- Amazon, Trendyol, Hepsiburada → Shopping
+- rent, kira → Rent
+- electricity, water, gas, internet, phone → Bills
+- salary, maaş → Income
+
+Allow users to create custom categorization rules:
+“If description contains X, set category to Y.”
+
+6. Budgets
+Add a budgeting system:
+- User can set monthly budget per category.
+- Show budget usage percentage.
+- Warn when category spending exceeds 80%.
+- Mark over-budget categories visually.
+- Show remaining budget.
+
+7. Insights
+Create an Insights page with:
+- Month-over-month comparison
+- Spending increase/decrease by category
+- Unusual spending detection
+- Recurring payment detection
+- Savings opportunities
+- Simple financial health score
+
+For now, if OpenAI API is not configured, generate rule-based insights. If OPENAI_API_KEY exists, use AI to generate a more natural monthly summary.
+
+8. Privacy & Security
+This app handles financial data, so implement privacy-conscious behavior:
+- Never expose API keys in frontend.
+- Do not store raw statement files permanently.
+- Mask IBAN, card numbers, customer numbers, and account numbers.
+- Add a Privacy Note section explaining what data is stored.
+- Store only structured transaction data.
+- Add clear delete-all-data option in Settings.
+
+9. Data Model
+Improve database schema if needed:
+- users
+- transactions
+- categories
+- budgets
+- categorization_rules
+- import_batches
+
+Use migrations or clearly documented schema setup.
+
+10. Demo Data
+Add a button or script to load realistic demo data so I can present the app in my portfolio without uploading real bank statements.
+
+11. Code Quality
+- Refactor messy code.
+- Separate frontend components properly.
+- Create reusable chart/card/table components.
+- Add validation.
+- Add helpful comments only where needed.
+- Update README with setup, features, environment variables, and demo instructions.
+
+12. Portfolio Readiness
+Add a landing-style README section explaining:
+- Problem
+- Solution
+- Tech stack
+- Key features
+- Security considerations
+- Future improvements
+
+Important:
+Do not break the existing working features.
+Work incrementally.
+After implementation, run the app, fix errors, and make sure Preview works.

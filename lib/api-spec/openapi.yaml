@@ -1,0 +1,761 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Personal Finance Tracker API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: transactions
+    description: Transaction operations
+  - name: upload
+    description: Statement upload operations
+  - name: dashboard
+    description: Dashboard and analytics
+  - name: categories
+    description: Category operations
+  - name: budgets
+    description: Budget operations
+  - name: rules
+    description: Categorization rule operations
+  - name: insights
+    description: Financial insights
+  - name: demo
+    description: Demo data
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /upload:
+    post:
+      operationId: uploadStatement
+      tags: [upload]
+      summary: Upload and parse a bank statement file (CSV, Excel, PDF)
+      responses:
+        "200":
+          description: Parsed and saved transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: Invalid file or parse error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /upload/preview:
+    post:
+      operationId: previewStatement
+      tags: [upload]
+      summary: Parse a bank statement file without saving — returns preview transactions
+      responses:
+        "200":
+          description: Parsed preview transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewResult"
+        "400":
+          description: Invalid file or parse error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /upload/confirm:
+    post:
+      operationId: confirmUpload
+      tags: [upload]
+      summary: Save previously-previewed transactions to the database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmUploadRequest"
+      responses:
+        "200":
+          description: Saved transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List transactions with optional filters
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [date, amount, category, merchant]
+        - name: sortDir
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionList"
+
+  /transactions/months:
+    get:
+      operationId: listMonths
+      tags: [transactions]
+      summary: List all months that have transactions
+      responses:
+        "200":
+          description: List of months
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /transactions/bulk-categorize:
+    post:
+      operationId: bulkCategorize
+      tags: [transactions]
+      summary: Update the category for multiple transactions at once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCategorizeRequest"
+      responses:
+        "200":
+          description: Number of updated transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkCategorizeResult"
+
+  /transactions/{id}:
+    patch:
+      operationId: updateTransaction
+      tags: [transactions]
+      summary: Update a transaction category or notes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionUpdate"
+      responses:
+        "200":
+          description: Updated transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTransaction
+      tags: [transactions]
+      summary: Delete a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard data for a given month
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List all available categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+
+  /budgets:
+    get:
+      operationId: listBudgets
+      tags: [budgets]
+      summary: List all budgets, optionally filtered by month
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of budgets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Budget"
+
+  /budgets/{month}/{category}:
+    put:
+      operationId: upsertBudget
+      tags: [budgets]
+      summary: Create or update a monthly budget for a category
+      parameters:
+        - name: month
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertBudgetRequest"
+      responses:
+        "200":
+          description: The upserted budget
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+    delete:
+      operationId: deleteBudget
+      tags: [budgets]
+      summary: Delete a monthly budget for a category
+      parameters:
+        - name: month
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: List all custom categorization rules
+      responses:
+        "200":
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Rule"
+    post:
+      operationId: createRule
+      tags: [rules]
+      summary: Create a new categorization rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRuleRequest"
+      responses:
+        "201":
+          description: Created rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+
+  /rules/{id}:
+    delete:
+      operationId: deleteRule
+      tags: [rules]
+      summary: Delete a categorization rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /insights:
+    get:
+      operationId: getInsights
+      tags: [insights]
+      summary: Get financial insights for a month
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Financial insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsightsData"
+
+  /demo:
+    post:
+      operationId: loadDemoData
+      tags: [demo]
+      summary: Load realistic demo transactions into the database
+      responses:
+        "200":
+          description: Number of inserted transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoResult"
+
+  /data:
+    delete:
+      operationId: deleteAllData
+      tags: [demo]
+      summary: Delete all transactions and budgets (for settings / fresh start)
+      responses:
+        "200":
+          description: Counts of deleted records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteDataResult"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+        merchant:
+          type: string
+        description:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+        category:
+          type: string
+        month:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, date, merchant, description, amount, type, category, month, createdAt]
+
+    TransactionList:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        total:
+          type: integer
+      required: [transactions, total]
+
+    TransactionUpdate:
+      type: object
+      properties:
+        category:
+          type: string
+        notes:
+          type: string
+
+    BulkCategorizeRequest:
+      type: object
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+        category:
+          type: string
+      required: [ids, category]
+
+    BulkCategorizeResult:
+      type: object
+      properties:
+        updated:
+          type: integer
+      required: [updated]
+
+    PreviewTransaction:
+      type: object
+      properties:
+        date:
+          type: string
+        merchant:
+          type: string
+        description:
+          type: string
+        amount:
+          type: number
+        type:
+          type: string
+        category:
+          type: string
+        month:
+          type: string
+        isDuplicate:
+          type: boolean
+      required: [date, merchant, description, amount, type, category, month, isDuplicate]
+
+    PreviewResult:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PreviewTransaction"
+        duplicateCount:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+      required: [transactions, duplicateCount, errors]
+
+    ConfirmUploadRequest:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PreviewTransaction"
+      required: [transactions]
+
+    UploadResult:
+      type: object
+      properties:
+        count:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        skipped:
+          type: integer
+      required: [count, transactions, skipped]
+
+    CategoryBreakdown:
+      type: object
+      properties:
+        category:
+          type: string
+        amount:
+          type: number
+        count:
+          type: integer
+        percentage:
+          type: number
+      required: [category, amount, count, percentage]
+
+    MerchantSummary:
+      type: object
+      properties:
+        merchant:
+          type: string
+        amount:
+          type: number
+        count:
+          type: integer
+      required: [merchant, amount, count]
+
+    MonthlyTrend:
+      type: object
+      properties:
+        month:
+          type: string
+        expenses:
+          type: number
+        income:
+          type: number
+      required: [month, expenses, income]
+
+    DashboardData:
+      type: object
+      properties:
+        month:
+          type: string
+        totalExpenses:
+          type: number
+        totalIncome:
+          type: number
+        netBalance:
+          type: number
+        transactionCount:
+          type: integer
+        topCategory:
+          type: ["string", "null"]
+        categoryBreakdown:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryBreakdown"
+        topMerchants:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantSummary"
+        monthlyTrends:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyTrend"
+        recentTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        biggestExpenses:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+        recurringPayments:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantSummary"
+      required: [month, totalExpenses, totalIncome, netBalance, transactionCount, topCategory, categoryBreakdown, topMerchants, monthlyTrends, recentTransactions, biggestExpenses, recurringPayments]
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        color:
+          type: string
+      required: [id, label, color]
+
+    Budget:
+      type: object
+      properties:
+        id:
+          type: integer
+        category:
+          type: string
+        month:
+          type: string
+        amount:
+          type: number
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, category, month, amount, createdAt, updatedAt]
+
+    UpsertBudgetRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+      required: [amount]
+
+    Rule:
+      type: object
+      properties:
+        id:
+          type: integer
+        pattern:
+          type: string
+        category:
+          type: string
+        priority:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, pattern, category, priority, createdAt]
+
+    CreateRuleRequest:
+      type: object
+      properties:
+        pattern:
+          type: string
+        category:
+          type: string
+        priority:
+          type: integer
+      required: [pattern, category]
+
+    MonthComparison:
+      type: object
+      properties:
+        category:
+          type: string
+        current:
+          type: number
+        previous:
+          type: number
+        change:
+          type: number
+        changePercent:
+          type: number
+      required: [category, current, previous, change, changePercent]
+
+    InsightsData:
+      type: object
+      properties:
+        month:
+          type: string
+        healthScore:
+          type: integer
+        summary:
+          type: string
+        monthOverMonth:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthComparison"
+        recurringPayments:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantSummary"
+        unusualMerchants:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantSummary"
+        savingsOpportunities:
+          type: array
+          items:
+            type: string
+      required: [month, healthScore, summary, monthOverMonth, recurringPayments, unusualMerchants, savingsOpportunities]
+
+    DemoResult:
+      type: object
+      properties:
+        count:
+          type: integer
+      required: [count]
+
+    DeleteDataResult:
+      type: object
+      properties:
+        transactions:
+          type: integer
+        budgets:
+          type: integer
+      required: [transactions, budgets]

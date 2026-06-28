@@ -1,0 +1,54 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-api",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/api-server run build",
+      "group": "build",
+      "presentation": { "reveal": "silent" }
+    },
+    {
+      "label": "Start API Server",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/api-server run dev",
+      "group": "build",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Start Frontend",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/finance-app run dev",
+      "group": "build",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always" }
+    },
+    {
+      "label": "Start All (API + Frontend)",
+      "dependsOn": ["Start API Server", "Start Frontend"],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Push DB Schema",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/db run push",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Run Codegen",
+      "type": "shell",
+      "command": "pnpm --filter @workspace/api-spec run codegen",
+      "group": "build",
+      "presentation": { "reveal": "always" }
+    },
+    {
+      "label": "Typecheck All",
+      "type": "shell",
+      "command": "pnpm run typecheck",
+      "group": "test",
+      "presentation": { "reveal": "always" }
+    }
+  ]
+}
