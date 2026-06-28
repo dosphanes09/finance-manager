@@ -310,14 +310,15 @@ export async function parsePdf(filePath: string, options: PdfParseOptions = {}):
   let debugTextPath = options.debugTextPath;
 
   if (options.debug) {
-    debugTextPath = await writePdfDebugText(rawText, options.debugDir);
+    const maskedRawText = maskSensitiveData(rawText);
+    debugTextPath = await writePdfDebugText(maskedRawText, options.debugDir);
     options.logger?.info(
       {
         debugTextPath,
         lineCount: lines.length,
-        first100Lines: lines.slice(0, 100),
+        first100Lines: lines.slice(0, 100).map(maskSensitiveData),
       },
-      "PDF parse debug: extracted selectable text",
+      "PDF parse debug: extracted selectable text (masked)",
     );
   }
 
@@ -687,6 +688,7 @@ function findDiagnosticLines(
 ): PdfDiagnosticLine[] {
   return lines
     .map((line, index) => ({ lineNumber: index + 1, text: line }))
+    .map((line) => ({ ...line, text: maskSensitiveData(line.text) }))
     .filter((line) => predicate(line.text))
     .slice(0, 25);
 }

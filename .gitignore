@@ -49,3 +49,4 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+artifacts/api-server/uploads/

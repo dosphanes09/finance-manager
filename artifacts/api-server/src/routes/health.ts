@@ -23,7 +23,7 @@ router.get("/health/db", async (_req, res) => {
       error: {
         name: error.name,
         code,
-        message: error.message || "Database connection failed",
+        message: "Database connection failed",
       },
     });
   }

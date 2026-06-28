@@ -62,7 +62,12 @@ brew install postgresql@16 && brew services start postgresql@16
 | `PORT` (frontend) | no | `5173` | Vite dev server port (set in `artifacts/finance-app/.env`) |
 | `BASE_PATH` | no | `/` | Vite base path (set in `artifacts/finance-app/.env`) |
 | `API_PORT` | no | `8080` | API port the Vite proxy forwards to (local dev only) |
-| `PDF_PARSE_DEBUG` | no | `false` | Save selectable-PDF parser debug text and print the first extracted lines |
+| `PDF_PARSE_DEBUG` | no | `false` | Save masked selectable-PDF parser debug text and print masked extracted-line diagnostics |
+| `CORS_ORIGINS` | no | local Vite origins | Comma-separated allowed browser origins for the API |
+| `JSON_BODY_LIMIT` | no | `5mb` | Express JSON body size limit |
+| `URLENCODED_BODY_LIMIT` | no | `256kb` | Express URL-encoded body size limit |
+| `UPLOAD_RATE_LIMIT_WINDOW_MS` | no | `60000` | Upload route rate-limit window |
+| `UPLOAD_RATE_LIMIT_MAX` | no | `8` | Upload requests allowed per IP per window |
 
 ### Example `DATABASE_URL` formats
 
@@ -380,15 +385,25 @@ $env:PDF_PARSE_DEBUG="true"
 pnpm --filter @workspace/api-server run dev
 ```
 
-You can also send `?pdfDebug=1` on `/api/upload/preview` or `/api/upload`. Debug mode saves extracted PDF text to a temp file, logs the first 100 extracted lines, and returns parser diagnostics when no transaction rows match. It does not use OCR.
+You can also send `?pdfDebug=1` on `/api/upload/preview` or `/api/upload`. Debug mode saves masked extracted PDF text to a temp file, logs masked line diagnostics, and returns parser diagnostics when no transaction rows match. It does not use OCR and must not be used to log raw bank statements.
 
 ---
 
 ## Privacy & Security
 
-- Uploaded files are **deleted immediately** after parsing — only structured fields are stored
-- IBAN numbers, 16-digit card numbers, and long account numbers are **masked (`****`)** before being stored (`lib/parsers.ts`)
+- Uploads are accepted only for CSV, XLSX, XLS, and PDF files after extension, MIME, and file-signature validation
+- Uploaded files are written to the ignored `.local/uploads` directory and **deleted immediately** after parsing
+- Upload endpoints are rate-limited and capped at **20 MB** per file
+- API JSON and URL-encoded request bodies have explicit size limits
+- IBAN numbers, 16-digit card numbers, and long account numbers are **masked (`****`)** before being stored
+- PDF debug output is masked before it is written or logged
 - No data is sent to any third-party service
+- Current authentication is local-development only. Add authentication and per-user authorization before hosted production use.
+
+See also:
+
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_AUDIT.md`
 
 ---
 

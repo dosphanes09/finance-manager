@@ -1,4 +1,5 @@
-import { Router, type IRouter, type Request } from "express";
+import crypto from "crypto";
+import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -17,12 +18,24 @@ import {
   ConfirmUploadBody,
 } from "@workspace/api-zod";
 import { desc, inArray } from "drizzle-orm";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_MB,
+  safeDeleteUpload,
+  sanitizeStoredText,
+  UploadValidationError,
+  validateUploadContent,
+  validateUploadMetadata,
+  type SupportedUploadExtension,
+} from "../lib/upload-security";
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
   : process.cwd();
 
-const uploadsDir = path.resolve(workspaceRoot, "artifacts/api-server/uploads");
+const uploadsDir = path.resolve(workspaceRoot, ".local/uploads");
+const uploadRateLimitWindowMs = parsePositiveInteger(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS, 60_000);
+const uploadRateLimitMax = parsePositiveInteger(process.env.UPLOAD_RATE_LIMIT_MAX, 8);
 
 const storage = multer.diskStorage({
   destination: async (_req, _file, cb) => {
@@ -31,24 +44,28 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `upload-${Date.now()}${ext}`);
+    cb(null, `upload-${Date.now()}-${crypto.randomUUID()}${ext}`);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
   fileFilter: (_req, file, cb) => {
-    const allowed = [".csv", ".xlsx", ".xls", ".pdf"];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error("Unsupported file type. Please upload CSV, Excel, or PDF."));
+    try {
+      validateUploadMetadata(file);
+      cb(null, true);
+    } catch (err) {
+      cb(err instanceof Error ? err : new Error("Invalid upload"));
+    }
   },
 });
 
 const router: IRouter = Router();
+const uploadRateLimit = createUploadRateLimit(uploadRateLimitWindowMs, uploadRateLimitMax);
+const statementUpload = createStatementUploadMiddleware();
 
-async function parseFile(filePath: string, ext: string, options: PdfParseOptions = {}) {
+async function parseFile(filePath: string, ext: SupportedUploadExtension, options: PdfParseOptions = {}) {
   if (ext === ".csv") return parseCsv(filePath);
   if (ext === ".xlsx" || ext === ".xls") return parseExcel(filePath);
   if (ext === ".pdf") return parsePdf(filePath, options);
@@ -74,6 +91,10 @@ function shouldDebugPdf(req: Request, ext: string): boolean {
 }
 
 function parseErrorPayload(err: unknown, fallback: string) {
+  if (err instanceof UploadValidationError) {
+    return { error: err.message };
+  }
+
   if (err instanceof StatementParseError) {
     return {
       error: err.message,
@@ -112,12 +133,17 @@ function logParseFailure(
   err: unknown,
   message: string,
 ) {
+  if (err instanceof UploadValidationError) {
+    req.log.warn({ error: err.message, statusCode: err.statusCode }, message);
+    return;
+  }
+
   if (err instanceof StatementParseError) {
     req.log.warn({ details: err.details }, message);
     return;
   }
 
-  req.log.error({ err }, message);
+  req.log.error({ error: sanitizeErrorForLog(err) }, message);
 }
 
 async function detectDuplicates(
@@ -139,7 +165,7 @@ async function detectDuplicates(
 
     return { existingKeys, errors: [] };
   } catch (err) {
-    log?.warn({ err }, "Duplicate detection skipped because the database is unavailable");
+    log?.warn({ error: sanitizeErrorForLog(err) }, "Duplicate detection skipped because the database is unavailable");
     return {
       existingKeys: new Set<string>(),
       errors: [
@@ -159,7 +185,7 @@ async function loadCustomRules(log?: Request["log"]): Promise<CustomRule[]> {
       .from(categorizationRulesTable)
       .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt));
   } catch (err) {
-    log?.warn({ err }, "Custom categorization rules unavailable; falling back to built-in categorization");
+    log?.warn({ error: sanitizeErrorForLog(err) }, "Custom categorization rules unavailable; falling back to built-in categorization");
     return [];
   }
 }
@@ -175,7 +201,7 @@ function categorizeImportedTransaction(
   );
 }
 
-router.post("/upload/preview", upload.single("file"), async (req, res): Promise<void> => {
+router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res): Promise<void> => {
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: "No file uploaded" });
@@ -183,10 +209,11 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
   }
 
   const filePath = file.path;
-  const ext = path.extname(file.originalname).toLowerCase();
-  const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
 
   try {
+    const ext = validateUploadMetadata(file);
+    const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
+    await validateUploadContent(filePath, ext);
     const parsed = await parseFile(filePath, ext, pdfOptions);
 
     if (parsed.length === 0) {
@@ -200,21 +227,26 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
     ]);
     const existingKeys = duplicateDetection.existingKeys;
 
-    const preview = parsed.map((t) => ({
-      date: t.date,
-      merchant: t.merchant,
-      description: t.description,
-      amount: t.amount,
-      type: t.type,
-      currency: t.currency ?? "TRY",
-      transactionType: t.transactionType ?? t.type,
-      balance: t.balance ?? null,
-      category: categorizeImportedTransaction(t, customRules),
-      month: t.date.substring(0, 7),
-      isDuplicate: existingKeys.has(
-        `${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`
-      ),
-    }));
+    const preview = parsed.map((t) => {
+      const merchant = sanitizeStoredText(t.merchant);
+      const description = sanitizeStoredText(t.description);
+
+      return {
+        date: t.date,
+        merchant,
+        description,
+        amount: t.amount,
+        type: t.type,
+        currency: t.currency ?? "TRY",
+        transactionType: t.transactionType ?? t.type,
+        balance: t.balance ?? null,
+        category: categorizeImportedTransaction({ ...t, merchant, description }, customRules),
+        month: t.date.substring(0, 7),
+        isDuplicate: existingKeys.has(
+          `${t.date}|${merchant.toLowerCase()}|${t.amount.toFixed(2)}`
+        ),
+      };
+    });
 
     const duplicateCount = preview.filter((p) => p.isDuplicate).length;
 
@@ -223,9 +255,9 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement for preview");
-    res.status(400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
+    res.status(err instanceof UploadValidationError ? err.statusCode : 400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
   } finally {
-    await fs.unlink(filePath).catch(() => {});
+    await safeDeleteUpload(uploadsDir, filePath).catch((err) => req.log.warn({ error: sanitizeErrorForLog(err) }, "Failed to clean uploaded file"));
   }
 });
 
@@ -246,8 +278,8 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
 
     const toInsert = toSave.map((t) => ({
       date: t.date,
-      merchant: t.merchant,
-      description: t.description,
+      merchant: sanitizeStoredText(t.merchant),
+      description: sanitizeStoredText(t.description),
       amount: String(t.amount),
       type: t.type,
       category: t.category,
@@ -268,12 +300,12 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
       })
     );
   } catch (err) {
-    req.log.error({ err }, "Failed to confirm upload");
+    req.log.error({ error: sanitizeErrorForLog(err) }, "Failed to confirm upload");
     res.status(500).json(parseErrorPayload(err, "Failed to save transactions."));
   }
 });
 
-router.post("/upload", upload.single("file"), async (req, res): Promise<void> => {
+router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promise<void> => {
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: "No file uploaded" });
@@ -281,10 +313,11 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
   }
 
   const filePath = file.path;
-  const ext = path.extname(file.originalname).toLowerCase();
-  const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
 
   try {
+    const ext = validateUploadMetadata(file);
+    const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
+    await validateUploadContent(filePath, ext);
     const parsed = await parseFile(filePath, ext, pdfOptions);
 
     if (parsed.length === 0) {
@@ -293,15 +326,20 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
     }
 
     const customRules = await loadCustomRules(req.log);
-    const toInsert = parsed.map((t) => ({
-      date: t.date,
-      merchant: t.merchant,
-      description: t.description,
-      amount: String(t.amount),
-      type: t.type,
-      category: categorizeImportedTransaction(t, customRules),
-      month: t.date.substring(0, 7),
-    }));
+    const toInsert = parsed.map((t) => {
+      const merchant = sanitizeStoredText(t.merchant);
+      const description = sanitizeStoredText(t.description);
+
+      return {
+        date: t.date,
+        merchant,
+        description,
+        amount: String(t.amount),
+        type: t.type,
+        category: categorizeImportedTransaction({ ...t, merchant, description }, customRules),
+        month: t.date.substring(0, 7),
+      };
+    });
 
     const inserted = await db.insert(transactionsTable).values(toInsert).returning();
 
@@ -318,10 +356,77 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement");
-    res.status(400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
+    res.status(err instanceof UploadValidationError ? err.statusCode : 400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
   } finally {
-    await fs.unlink(filePath).catch(() => {});
+    await safeDeleteUpload(uploadsDir, filePath).catch((err) => req.log.warn({ error: sanitizeErrorForLog(err) }, "Failed to clean uploaded file"));
   }
 });
 
 export default router;
+
+function createStatementUploadMiddleware() {
+  const single = upload.single("file");
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    single(req, res, (err) => {
+      if (!err) {
+        next();
+        return;
+      }
+
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({ error: `File is too large. Maximum size is ${MAX_UPLOAD_MB} MB.` });
+        return;
+      }
+
+      if (err instanceof UploadValidationError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+
+      req.log.warn({ error: sanitizeErrorForLog(err) }, "Rejected uploaded file");
+      res.status(400).json({ error: "Invalid uploaded file." });
+    });
+  };
+}
+
+function createUploadRateLimit(windowMs: number, maxRequests: number) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || "unknown";
+    const current = hits.get(key);
+
+    if (!current || current.resetAt <= now) {
+      hits.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+
+    current.count += 1;
+    if (current.count > maxRequests) {
+      const retryAfter = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+      res.setHeader("Retry-After", String(retryAfter));
+      res.status(429).json({ error: "Too many upload requests. Please wait and try again." });
+      return;
+    }
+
+    next();
+  };
+}
+
+function parsePositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sanitizeErrorForLog(err: unknown) {
+  if (!(err instanceof Error)) return { message: String(err) };
+
+  return {
+    name: err.name,
+    message: err.message,
+    code: typeof err === "object" && "code" in err ? String(err.code) : undefined,
+  };
+}
