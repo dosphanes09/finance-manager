@@ -209,6 +209,17 @@ export default function Upload() {
             </div>
           )}
 
+          {errors.length > 0 && (
+            <div className="space-y-2">
+              {errors.map((message, index) => (
+                <div key={index} className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span className="text-amber-800">{message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <Card className="shadow-sm">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">

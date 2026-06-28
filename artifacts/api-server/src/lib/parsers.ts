@@ -51,6 +51,7 @@ interface AmountCandidate {
   raw: string;
   value: number;
   index: number;
+  currency?: "TRY" | "FOREIGN";
 }
 
 interface ColumnLayout {
@@ -81,7 +82,7 @@ export class StatementParseError extends Error {
 }
 
 const DATE_PATTERN = /\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b/g;
-const AMOUNT_PATTERN = /(?<![\d.,])[-+]?\s*(?:\u20ba\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})(?:\s*(?:TL|TRY|\u20ba))?(?![\d.,])/gi;
+const AMOUNT_PATTERN = /(?<![\p{L}\d.,/])[-+]?\s*(?:\u20ba\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})(?:\s*(?:TL|TRY|\u20ba))?(?![\d.,])/giu;
 
 function maskSensitiveData(text: string): string {
   return text
@@ -373,7 +374,22 @@ function extractAmountCandidates(text: string): AmountCandidate[] {
     raw: match[0],
     value: parseSignedAmount(match[0]),
     index: match.index ?? 0,
+    currency: detectAmountCurrency(text, match[0], match.index ?? 0),
   }));
+}
+
+function detectAmountCurrency(
+  text: string,
+  raw: string,
+  index: number,
+): AmountCandidate["currency"] {
+  const end = index + raw.length;
+  const aroundAmount = `${text.slice(Math.max(0, index - 2), index)}${raw}${text.slice(end, end + 8)}`;
+
+  if (/(?:TL|TRY|\u20ba)/i.test(aroundAmount)) return "TRY";
+  if (/\b(?:USD|EUR|GBP)\b/i.test(text.slice(end, end + 8))) return "FOREIGN";
+
+  return undefined;
 }
 
 function buildTransactionBlocks(lines: string[]): TransactionBlock[] {
@@ -381,11 +397,24 @@ function buildTransactionBlocks(lines: string[]): TransactionBlock[] {
   let current: TransactionBlock | null = null;
 
   lines.forEach((line, index) => {
+    if (isLikelyStatementNonTransactionLine(line)) {
+      if (current) {
+        blocks.push(current);
+        current = null;
+      }
+      return;
+    }
+
     const dateTokens = findDateTokens(line);
     const hasDate = dateTokens.length > 0;
     const hasAmount = extractAmountCandidates(line).length > 0;
 
-    if (hasDate && !isLikelyStatementPeriodLine(line) && (dateTokens.length === 1 || hasAmount)) {
+    if (
+      hasDate &&
+      !isLikelyStatementPeriodLine(line) &&
+      !isLikelyStatementMetadataDateLine(line) &&
+      (dateTokens.length === 1 || hasAmount)
+    ) {
       if (current) blocks.push(current);
       current = { startLine: index + 1, lines: [line] };
       return;
@@ -407,8 +436,48 @@ function isLikelyStatementPeriodLine(line: string): boolean {
   );
 }
 
+function isLikelyStatementMetadataDateLine(line: string): boolean {
+  const normalized = normalizeForMatching(line);
+  return includesAny(normalized, [
+    "ekstre tarihi",
+    "ekstre borcu",
+    "minimum odeme",
+    "son odeme tarihi",
+    "bir sonraki ekstrenizin",
+    "statement date",
+    "payment due date",
+  ]);
+}
+
+function isLikelyStatementNonTransactionLine(line: string): boolean {
+  const normalized = normalizeForMatching(line);
+  return includesAny(normalized, [
+    "ekstre tarihi",
+    "ekstre borcu",
+    "minimum odeme",
+    "son odeme tarihi",
+    "ad soyad",
+    "kart numarasi",
+    "kart limiti",
+    "kullanilabilir kart limiti",
+    "bir onceki ekstre bakiyeniz",
+    "bir sonraki ekstrenizin",
+    "guncel akdi faiz",
+    "faiz orani",
+    "sayfa ",
+    "kart sahibinin",
+    "seri-sira no",
+    "mersis no",
+    "kredi karti ekstresi",
+    "-- ",
+  ]);
+}
+
 function detectColumnLayout(lines: string[]): ColumnLayout {
-  const normalized = normalizeForMatching(lines.slice(0, 100).join(" "));
+  const headerLines = lines
+    .slice(0, 100)
+    .filter((line) => isLikelyColumnHeaderLine(line));
+  const normalized = normalizeForMatching(headerLines.join(" "));
   const debitIndex = firstIndexOfAny(normalized, ["borc", "debit", "cekilen", "gider"]);
   const creditIndex = firstIndexOfAny(normalized, ["alacak", "credit", "yatan", "gelir"]);
   const balanceIndex = firstIndexOfAny(normalized, ["bakiye", "balance"]);
@@ -418,6 +487,32 @@ function detectColumnLayout(lines: string[]): ColumnLayout {
     hasDebitCreditColumns: debitIndex >= 0 && creditIndex >= 0,
     debitBeforeCredit: debitIndex === -1 || creditIndex === -1 ? true : debitIndex < creditIndex,
   };
+}
+
+function isLikelyColumnHeaderLine(line: string): boolean {
+  if (isLikelyStatementNonTransactionLine(line)) return false;
+
+  const normalized = normalizeForMatching(line);
+  const hasDateOrDescriptionLabel = includesAny(normalized, [
+    "islem tarihi",
+    "tarih",
+    "date",
+    "aciklama",
+    "description",
+    "narration",
+  ]);
+  const hasMoneyColumnLabel = includesAny(normalized, [
+    "tutar",
+    "amount",
+    "borc",
+    "alacak",
+    "debit",
+    "credit",
+    "bakiye",
+    "balance",
+  ]);
+
+  return hasDateOrDescriptionLabel && hasMoneyColumnLabel;
 }
 
 function firstIndexOfAny(text: string, needles: string[]): number {
@@ -472,7 +567,7 @@ function pickTransactionAmount(
   candidates: AmountCandidate[],
   layout: ColumnLayout,
 ): PickedAmount | null {
-  const hasLikelyBalance = layout.hasBalanceColumn || candidates.length >= 2;
+  const hasLikelyBalance = layout.hasBalanceColumn;
   const dataCandidates = hasLikelyBalance && candidates.length > 1
     ? candidates.slice(0, -1)
     : candidates;
@@ -494,8 +589,16 @@ function pickTransactionAmount(
     return { candidate: signed, role: signed.value < 0 ? "debit" : "credit" };
   }
 
-  const firstNonZero = dataCandidates.find((candidate) => Math.abs(candidate.value) > 0);
-  if (firstNonZero) return { candidate: firstNonZero };
+  const localCurrencyCandidates = dataCandidates.filter(
+    (candidate) => candidate.currency === "TRY" && Math.abs(candidate.value) > 0,
+  );
+
+  if (localCurrencyCandidates.length > 0) {
+    return { candidate: localCurrencyCandidates[localCurrencyCandidates.length - 1] };
+  }
+
+  const nonZeroCandidates = dataCandidates.filter((candidate) => Math.abs(candidate.value) > 0);
+  if (nonZeroCandidates.length > 0) return { candidate: nonZeroCandidates[nonZeroCandidates.length - 1] };
 
   return null;
 }
@@ -504,8 +607,11 @@ function buildPdfDescription(blockText: string): string {
   const withoutDateOrAmounts = blockText
     .replace(DATE_PATTERN, " ")
     .replace(AMOUNT_PATTERN, " ")
-    .replace(/\b(?:islem|i\u015flem|tarih|tarihi|aciklama|a\u00e7\u0131klama|borc|bor\u00e7|alacak|bakiye|debit|credit|balance|amount|tutar|tl|try)\b/gi, " ")
+    .replace(/\b\d+\s*\/\s*\d+\b/g, " ")
+    .replace(/\b(?:islem|i\u015flem|tarih|tarihi|aciklama|a\u00e7\u0131klama|borc|bor\u00e7|alacak|bakiye|debit|credit|balance|amount|tutar|tl|try|usd|eur|gbp)\b/gi, " ")
+    .replace(/\(\s*\)/g, " ")
     .replace(/\s+/g, " ")
+    .replace(/\s+-\s*$/g, "")
     .trim();
 
   return maskSensitiveData(withoutDateOrAmounts || "Transaction");

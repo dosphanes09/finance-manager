@@ -16,8 +16,7 @@ import {
   PreviewStatementResponse,
   ConfirmUploadBody,
 } from "@workspace/api-zod";
-import { and, eq, inArray } from "drizzle-orm";
-import { logger } from "../lib/logger";
+import { inArray } from "drizzle-orm";
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
@@ -82,7 +81,30 @@ function parseErrorPayload(err: unknown, fallback: string) {
     };
   }
 
+  if (isDatabaseConnectionError(err)) {
+    return {
+      error: "Database connection failed. PDF parsing may have succeeded, but duplicate detection or saving requires PostgreSQL.",
+      details: {
+        reason: "PostgreSQL connection was refused or unavailable.",
+        suggestedFix: "Start PostgreSQL, verify DATABASE_URL, then run pnpm --filter @workspace/db run push.",
+      },
+    };
+  }
+
   return { error: fallback };
+}
+
+function isDatabaseConnectionError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error && "cause" in err ? String(err.cause) : "";
+  const text = `${message} ${cause}`;
+
+  return (
+    text.includes("ECONNREFUSED") ||
+    text.includes("Connection terminated") ||
+    text.includes("DATABASE_URL") ||
+    text.includes("Failed query")
+  );
 }
 
 function logParseFailure(
@@ -99,21 +121,32 @@ function logParseFailure(
 }
 
 async function detectDuplicates(
-  candidates: Array<{ date: string; merchant: string; amount: number }>
+  candidates: Array<{ date: string; merchant: string; amount: number }>,
+  log?: Request["log"],
 ) {
-  if (candidates.length === 0) return new Set<string>();
+  if (candidates.length === 0) return { existingKeys: new Set<string>(), errors: [] };
 
   const dates = [...new Set(candidates.map((c) => c.date))];
-  const existing = await db
-    .select({ date: transactionsTable.date, merchant: transactionsTable.merchant, amount: transactionsTable.amount })
-    .from(transactionsTable)
-    .where(inArray(transactionsTable.date, dates));
+  try {
+    const existing = await db
+      .select({ date: transactionsTable.date, merchant: transactionsTable.merchant, amount: transactionsTable.amount })
+      .from(transactionsTable)
+      .where(inArray(transactionsTable.date, dates));
 
-  const existingKeys = new Set(
-    existing.map((e) => `${e.date}|${e.merchant.toLowerCase()}|${parseFloat(e.amount).toFixed(2)}`)
-  );
+    const existingKeys = new Set(
+      existing.map((e) => `${e.date}|${e.merchant.toLowerCase()}|${parseFloat(e.amount).toFixed(2)}`)
+    );
 
-  return existingKeys;
+    return { existingKeys, errors: [] };
+  } catch (err) {
+    log?.warn({ err }, "Duplicate detection skipped because the database is unavailable");
+    return {
+      existingKeys: new Set<string>(),
+      errors: [
+        "Duplicate detection was skipped because the database is unavailable. Parsed transactions are shown as new.",
+      ],
+    };
+  }
 }
 
 router.post("/upload/preview", upload.single("file"), async (req, res): Promise<void> => {
@@ -135,7 +168,8 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
       return;
     }
 
-    const existingKeys = await detectDuplicates(parsed);
+    const duplicateDetection = await detectDuplicates(parsed, req.log);
+    const existingKeys = duplicateDetection.existingKeys;
 
     const preview = parsed.map((t) => ({
       date: t.date,
@@ -153,7 +187,7 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
     const duplicateCount = preview.filter((p) => p.isDuplicate).length;
 
     res.json(
-      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors: [] })
+      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors: duplicateDetection.errors })
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement for preview");
@@ -164,42 +198,47 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
 });
 
 router.post("/upload/confirm", async (req, res): Promise<void> => {
-  const body = ConfirmUploadBody.safeParse(req.body);
-  if (!body.success) {
-    res.status(400).json({ error: body.error.message });
-    return;
+  try {
+    const body = ConfirmUploadBody.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: body.error.message });
+      return;
+    }
+
+    const toSave = body.data.transactions.filter((t) => !t.isDuplicate);
+
+    if (toSave.length === 0) {
+      res.json(UploadStatementResponse.parse({ count: 0, transactions: [], skipped: body.data.transactions.length }));
+      return;
+    }
+
+    const toInsert = toSave.map((t) => ({
+      date: t.date,
+      merchant: t.merchant,
+      description: t.description,
+      amount: String(t.amount),
+      type: t.type,
+      category: t.category,
+      month: t.month,
+    }));
+
+    const inserted = await db.insert(transactionsTable).values(toInsert).returning();
+
+    res.json(
+      UploadStatementResponse.parse({
+        count: inserted.length,
+        skipped: body.data.transactions.length - inserted.length,
+        transactions: inserted.map((t) => ({
+          ...t,
+          amount: parseFloat(t.amount),
+          createdAt: t.createdAt.toISOString(),
+        })),
+      })
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to confirm upload");
+    res.status(500).json(parseErrorPayload(err, "Failed to save transactions."));
   }
-
-  const toSave = body.data.transactions.filter((t) => !t.isDuplicate);
-
-  if (toSave.length === 0) {
-    res.json(UploadStatementResponse.parse({ count: 0, transactions: [], skipped: body.data.transactions.length }));
-    return;
-  }
-
-  const toInsert = toSave.map((t) => ({
-    date: t.date,
-    merchant: t.merchant,
-    description: t.description,
-    amount: String(t.amount),
-    type: t.type,
-    category: t.category,
-    month: t.month,
-  }));
-
-  const inserted = await db.insert(transactionsTable).values(toInsert).returning();
-
-  res.json(
-    UploadStatementResponse.parse({
-      count: inserted.length,
-      skipped: body.data.transactions.length - inserted.length,
-      transactions: inserted.map((t) => ({
-        ...t,
-        amount: parseFloat(t.amount),
-        createdAt: t.createdAt.toISOString(),
-      })),
-    })
-  );
 });
 
 router.post("/upload", upload.single("file"), async (req, res): Promise<void> => {
