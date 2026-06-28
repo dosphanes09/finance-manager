@@ -5,6 +5,9 @@ import fs from "fs/promises";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { parseStatementText, type NormalizedTransaction } from "./statement-parsers";
+import { normalizeMerchant } from "./statement-parsers/merchant-normalizer";
+import { inferTransactionKind } from "./statement-parsers/text-utils";
+import type { BankId, TransactionKind } from "./statement-parsers/types";
 
 export interface ParsedTransaction {
   date: string;
@@ -14,10 +17,15 @@ export interface ParsedTransaction {
   type: "debit" | "credit";
   currency?: string;
   transactionType?: "debit" | "credit";
+  transactionKind?: TransactionKind;
   balance?: number | null;
   category?: string;
+  bank?: BankId;
   parser?: string;
   confidence?: number;
+  categorizationConfidence?: number;
+  categorizationSource?: string;
+  categorizationExplanation?: string;
 }
 
 export interface PdfDiagnosticLine {
@@ -238,7 +246,7 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
     if (!rawDesc) continue;
 
     const description = maskSensitiveData(rawDesc);
-    const merchant = extractMerchant(description);
+    const normalizedMerchant = normalizeMerchant(description);
 
     let amount = 0;
     let type: "debit" | "credit" = "debit";
@@ -257,12 +265,33 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
       const rawAmount = get(amountKey);
       amount = parseAmount(rawAmount);
       const rawType = typeKey ? get(typeKey) : "";
-      type = detectType(rawAmount, rawType);
+      type = detectType(rawAmount, `${rawType} ${description}`);
     }
 
     if (amount === 0) continue;
 
-    results.push({ date, merchant, description, amount, type });
+    const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, type);
+
+    results.push({
+      date,
+      merchant: normalizedMerchant.merchant,
+      description,
+      amount,
+      type,
+      currency: "TRY",
+      transactionType: type,
+      transactionKind,
+      balance: null,
+      category: normalizedMerchant.category,
+      bank: "generic",
+      parser: "structured",
+      confidence: normalizedMerchant.confidence,
+      categorizationConfidence: normalizedMerchant.confidence,
+      categorizationSource: normalizedMerchant.matchedPattern ? "merchant_rule" : "built_in",
+      categorizationExplanation: normalizedMerchant.matchedPattern
+        ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
+        : "Category inferred from deterministic merchant and keyword rules.",
+    });
   }
 
   return results;
@@ -365,10 +394,15 @@ function toParsedTransaction(transaction: NormalizedTransaction): ParsedTransact
     type: transaction.transactionType,
     currency: transaction.currency,
     transactionType: transaction.transactionType,
+    transactionKind: transaction.transactionKind,
     balance: transaction.balance,
     category: transaction.category,
+    bank: transaction.parser,
     parser: transaction.parser,
     confidence: transaction.confidence,
+    categorizationConfidence: transaction.categorizationConfidence,
+    categorizationSource: transaction.categorizationSource,
+    categorizationExplanation: transaction.categorizationExplanation,
   };
 }
 

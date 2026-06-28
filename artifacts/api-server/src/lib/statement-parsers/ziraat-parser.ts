@@ -2,6 +2,7 @@ import {
   cleanDescription,
   detectTransactionTypeFromAmount,
   extractAmountCandidates,
+  inferTransactionKind,
   includesAny,
   normalizeForMatching,
   parseDate,
@@ -98,6 +99,7 @@ function parseZiraatRow(line: string): NormalizedTransaction | null {
 
   const normalizedMerchant = normalizeMerchant(description);
   const transactionType = inferZiraatType(description, picked.raw);
+  const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, transactionType);
 
   return {
     date,
@@ -106,10 +108,16 @@ function parseZiraatRow(line: string): NormalizedTransaction | null {
     amount: picked.absValue,
     currency: "TRY",
     transactionType,
+    transactionKind,
     balance: null,
     category: normalizedMerchant.category,
     parser: "ziraat",
     confidence: Math.min(0.97, normalizedMerchant.confidence + 0.01),
+    categorizationConfidence: normalizedMerchant.confidence,
+    categorizationSource: normalizedMerchant.matchedPattern ? "merchant_rule" : "built_in",
+    categorizationExplanation: normalizedMerchant.matchedPattern
+      ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
+      : "Category inferred from Ziraat parser and deterministic keyword rules.",
   };
 }
 

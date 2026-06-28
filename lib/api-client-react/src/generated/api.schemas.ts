@@ -50,7 +50,18 @@ export interface Transaction {
   description: string;
   amount: number;
   type: string;
+  currency: string;
+  transactionKind: string;
+  bank: string;
+  /** @nullable */
+  parser?: string | null;
+  /** @nullable */
+  balance: number | null;
   category: string;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
+  importConfidence: number;
   month: string;
   /** @nullable */
   notes?: string | null;
@@ -103,9 +114,16 @@ export interface PreviewTransaction {
   type: string;
   currency: string;
   transactionType: PreviewTransactionTransactionType;
+  transactionKind: string;
   /** @nullable */
   balance: number | null;
   category: string;
+  bank: string;
+  parser: string;
+  confidence: number;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
   month: string;
   isDuplicate: boolean;
 }

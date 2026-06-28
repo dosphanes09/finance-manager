@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
 import { needsRuleReview } from "../lib/rule-suggestions";
+import { rememberMerchantsFromTransactions } from "../lib/merchant-memory";
 import {
   ListTransactionsQueryParams,
   ListTransactionsResponse,
@@ -22,6 +23,9 @@ function serializeTransaction(t: typeof transactionsTable.$inferSelect) {
   return {
     ...t,
     amount: parseFloat(t.amount),
+    balance: t.balance === null ? null : parseFloat(t.balance),
+    categorizationConfidence: parseFloat(t.categorizationConfidence),
+    importConfidence: parseFloat(t.importConfidence),
     createdAt: t.createdAt.toISOString(),
   };
 }
@@ -90,6 +94,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
       type: row.type,
       category: row.category,
       reviewed: row.reviewed,
+      categorizationConfidence: row.categorizationConfidence,
     }));
 
     res.json(
@@ -139,9 +144,25 @@ router.post("/transactions/bulk-categorize", async (req, res): Promise<void> => 
 
   const updated = await db
     .update(transactionsTable)
-    .set({ category, reviewed: true })
+    .set({
+      category,
+      reviewed: true,
+      categorizationConfidence: "0.99",
+      categorizationSource: "user_correction",
+      categorizationExplanation: "User corrected category through bulk edit; merchant memory updated for future imports.",
+    })
     .where(inArray(transactionsTable.id, ids))
-    .returning({ id: transactionsTable.id });
+    .returning();
+
+  await rememberMerchantsFromTransactions(
+    updated.map((transaction) => ({
+      merchant: transaction.merchant,
+      description: transaction.description,
+      category: transaction.category,
+      confidence: 0.99,
+    })),
+    "user_correction",
+  );
 
   res.json(BulkCategorizeResponse.parse({ updated: updated.length }));
 });
@@ -187,6 +208,9 @@ router.patch("/transactions/:id", async (req, res): Promise<void> => {
   if (body.data.category !== undefined) {
     update.category = body.data.category;
     update.reviewed = true;
+    update.categorizationConfidence = "0.99";
+    update.categorizationSource = "user_correction";
+    update.categorizationExplanation = "User corrected category inline; merchant memory updated for future imports.";
   }
   if (body.data.notes !== undefined) update.notes = body.data.notes;
   if (body.data.reviewed !== undefined) update.reviewed = body.data.reviewed;
@@ -205,6 +229,18 @@ router.patch("/transactions/:id", async (req, res): Promise<void> => {
   if (!updated) {
     res.status(404).json({ error: "Transaction not found" });
     return;
+  }
+
+  if (body.data.category !== undefined) {
+    await rememberMerchantsFromTransactions(
+      [{
+        merchant: updated.merchant,
+        description: updated.description,
+        category: updated.category,
+        confidence: 0.99,
+      }],
+      "user_correction",
+    );
   }
 
   res.json(UpdateTransactionResponse.parse(serializeTransaction(updated)));

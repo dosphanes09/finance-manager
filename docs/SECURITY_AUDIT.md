@@ -29,7 +29,7 @@ The application is a local, single-user finance tracker with no authentication l
 | SEC-017 | Low | Client-side trust | `pages/upload.tsx`, `routes/upload.ts` | Preview rows can be edited client-side and submitted to `/upload/confirm`. Without server-side sanitization, client can bypass parser masking and category assumptions. | Treat confirm payload as untrusted; validate and mask again before insert. | Implemented in Phase 3 |
 | SEC-018 | Low | Environment secrets | `.gitignore`, `.env.example`, `README.md` | Root `.env` and `.local` are ignored. `artifacts/api-server/uploads` was not ignored. README shows example credentials but no real secrets. | Add upload temp directories to `.gitignore`; never commit `.env` or local DB data. | Implemented in Phase 3 |
 | SEC-019 | Medium | Privacy retention | `routes/upload.ts`, `routes/demo.ts`, `pages/settings.tsx` | Structured financial data is retained indefinitely until delete-all-data. Raw uploaded files are deleted after parsing. Export CSV can expose sensitive transaction data to local disk. | Explain retention clearly, keep delete flow, mask before storage, and keep raw files temporary. | Partially implemented in Phase 3; retention policy/auth remains |
-| SEC-020 | Medium | AI readiness | Future AI routes | Future AI features could send raw PDFs/descriptions, IBANs, card numbers, or prompt-injection text to an external model. | Never send raw PDFs; anonymize transaction text; strip IBAN/card/account numbers; validate AI output; add rate/cost limits. | Open; future AI work |
+| SEC-020 | Medium | AI readiness | `lib/import-categorization.ts`, future AI routes | The optional low-confidence LLM categorization hook could send transaction text to an external model if enabled. | Keep disabled by default; never send raw PDFs; mask descriptions; strip IBAN/card/account numbers; validate AI output; add user consent, rate limits, and cost controls before hosted production use. | Partially implemented: opt-in only, deterministic-first threshold, masked descriptions, schema/category validation; production consent/rate controls remain |
 
 ## File Upload Security
 
@@ -91,7 +91,7 @@ Raw uploaded files are deleted after parsing. Parsed structured data remains in 
 
 ## AI Readiness
 
-AI is not currently used. Before adding AI:
+AI is not used by default. The import pipeline includes an optional low-confidence categorization fallback that only runs when `LLM_CATEGORIZATION_ENABLED=true`, an endpoint/key are configured, and deterministic confidence is below the configured threshold. Before hosted production AI use:
 
 - do not send raw PDFs to AI
 - anonymize and mask descriptions before model calls

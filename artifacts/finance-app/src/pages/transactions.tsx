@@ -42,6 +42,20 @@ function SortIcon({ column, sortBy, sortDir }: { column: SortBy; sortBy: SortBy;
     : <ChevronDown className="w-3 h-3 ml-1 text-primary" />;
 }
 
+function formatConfidence(value: number) {
+  return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+}
+
+function confidenceClass(value: number) {
+  if (value >= 0.9) return "text-emerald-600 bg-emerald-500/10 border-emerald-300";
+  if (value >= 0.7) return "text-amber-600 bg-amber-500/10 border-amber-300";
+  return "text-rose-600 bg-rose-500/10 border-rose-300";
+}
+
+function formatMetadata(value: string) {
+  return value.replace(/_/g, " ");
+}
+
 export default function Transactions() {
   const [search, setSearch] = useState("");
   const [merchantFilter, setMerchantFilter] = useState("");
@@ -298,10 +312,10 @@ export default function Transactions() {
 
   const handleExportCsv = () => {
     if (!data?.transactions.length) return;
-    const headers = ["Date", "Merchant", "Description", "Type", "Category", "Amount", "Notes"];
+    const headers = ["Date", "Merchant", "Description", "Type", "Transaction Kind", "Category", "Confidence", "Category Source", "Amount", "Notes"];
     const rows = data.transactions.map((t) => [
       t.date, t.merchant, `"${t.description.replace(/"/g, '""')}"`,
-      t.type, t.category, t.amount, t.notes ?? "",
+      t.type, t.transactionKind, t.category, t.categorizationConfidence, t.categorizationSource, t.amount, t.notes ?? "",
     ]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -515,6 +529,7 @@ export default function Transactions() {
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("category")}>
                 <span className="flex items-center">Category <SortIcon column="category" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
+              <TableHead className="min-w-[170px]">Confidence</TableHead>
               <TableHead className="cursor-pointer select-none text-right" onClick={() => handleSort("amount")}>
                 <span className="flex items-center justify-end">Amount <SortIcon column="amount" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
@@ -526,11 +541,11 @@ export default function Transactions() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading...</TableCell>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Loading...</TableCell>
               </TableRow>
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No transactions found.</TableCell>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">No transactions found.</TableCell>
               </TableRow>
             ) : (
               transactions.map((t) => (
@@ -564,6 +579,17 @@ export default function Transactions() {
                       </SelectContent>
                     </Select>
                   </TableCell>
+                  <TableCell>
+                    <div className="space-y-1 max-w-[200px]">
+                      <Badge variant="outline" className={`text-xs ${confidenceClass(t.categorizationConfidence)}`}>
+                        {formatConfidence(t.categorizationConfidence)}
+                      </Badge>
+                      <div className="text-[11px] text-muted-foreground">{formatMetadata(t.categorizationSource)}</div>
+                      <div className="text-[11px] text-muted-foreground line-clamp-2" title={t.categorizationExplanation}>
+                        {t.categorizationExplanation}
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell className={`text-right font-mono text-sm font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
                     {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}
                   </TableCell>
@@ -571,6 +597,7 @@ export default function Transactions() {
                     <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
                       {t.type}
                     </Badge>
+                    <div className="text-[11px] text-muted-foreground mt-1">{formatMetadata(t.transactionKind)}</div>
                   </TableCell>
                   <TableCell>
                     {editingNote?.id === t.id ? (

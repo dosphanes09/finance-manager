@@ -3,6 +3,7 @@ import {
   detectTransactionTypeFromAmount,
   extractAmountCandidates,
   findDateTokens,
+  inferTransactionKind,
   includesAny,
   normalizeForMatching,
   parseDate,
@@ -132,6 +133,7 @@ function parseBlock(block: TransactionBlock, layout: ColumnLayout): NormalizedTr
   const description = cleanDescription(blockText) || "Transaction";
   const normalizedMerchant = normalizeMerchant(description);
   const transactionType = picked.role ?? inferType(description, picked.candidate.raw);
+  const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, transactionType);
 
   return {
     date,
@@ -140,10 +142,16 @@ function parseBlock(block: TransactionBlock, layout: ColumnLayout): NormalizedTr
     amount: picked.candidate.absValue,
     currency: picked.candidate.currency ?? "TRY",
     transactionType,
+    transactionKind,
     balance: picked.balance?.absValue ?? null,
     category: normalizedMerchant.category,
     parser: "generic",
     confidence: Math.min(0.82, normalizedMerchant.confidence),
+    categorizationConfidence: normalizedMerchant.confidence,
+    categorizationSource: normalizedMerchant.matchedPattern ? "merchant_rule" : "built_in",
+    categorizationExplanation: normalizedMerchant.matchedPattern
+      ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
+      : "Category inferred from deterministic merchant and keyword rules.",
   };
 }
 

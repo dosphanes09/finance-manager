@@ -68,6 +68,10 @@ brew install postgresql@16 && brew services start postgresql@16
 | `URLENCODED_BODY_LIMIT` | no | `256kb` | Express URL-encoded body size limit |
 | `UPLOAD_RATE_LIMIT_WINDOW_MS` | no | `60000` | Upload route rate-limit window |
 | `UPLOAD_RATE_LIMIT_MAX` | no | `8` | Upload requests allowed per IP per window |
+| `LLM_CATEGORIZATION_ENABLED` | no | `false` | Enables optional low-confidence categorization fallback only after deterministic rules fail |
+| `LLM_CATEGORIZATION_CONFIDENCE_THRESHOLD` | no | `0.65` | LLM fallback is skipped when deterministic confidence is at or above this value |
+| `LLM_CATEGORIZATION_ENDPOINT` | no | — | Optional internal LLM categorization endpoint |
+| `LLM_CATEGORIZATION_API_KEY` | no | — | API key for the optional LLM endpoint |
 
 ### Example `DATABASE_URL` formats
 
@@ -143,7 +147,7 @@ The `.local` folder is ignored by git and must not be committed.
 pnpm --filter @workspace/db run push
 ```
 
-This creates three tables: `transactions`, `budgets`, `categorization_rules`. The `transactions` table includes a `reviewed` flag used by the Needs Review workflow.
+This creates four core tables: `transactions`, `budgets`, `categorization_rules`, and `merchants`. The `transactions` table stores parser/categorization confidence metadata and a `reviewed` flag used by the Needs Review workflow. The `merchants` table is a persistent recognition memory so corrected or recognized merchants are reused on future imports.
 
 ### 5. Start the development servers
 
@@ -357,6 +361,26 @@ pnpm --filter @workspace/db run migrate    # apply migrations safely
 ---
 
 ## Supported Bank Statement Formats
+
+The import pipeline is deterministic first:
+
+1. Validate file extension, MIME type, size, and file signature.
+2. Extract structured rows from CSV/Excel or selectable text from PDF.
+3. Detect Turkish bank profile automatically.
+4. Normalize rows into one canonical transaction shape: date, merchant, description, amount, direction, semantic transaction kind, currency, balance, bank/parser metadata, category, confidence, and explanation.
+5. Remove noisy bank tokens such as POS IDs, reference numbers, authorization codes, masked cards, transaction IDs, timestamps, and installment markers.
+6. Categorize with user rules, persistent merchant memory, parser merchant rules, and built-in deterministic rules.
+7. Use the optional LLM fallback only when enabled and deterministic confidence is below `LLM_CATEGORIZATION_CONFIDENCE_THRESHOLD`.
+
+Detected Turkish bank profiles:
+
+| Bank | Current support |
+|---|---|
+| Enpara | Bank-specific credit-card PDF parser |
+| Ziraat | Bank-specific Bankkart PDF parser |
+| Is Bankasi, Garanti BBVA, Akbank, Yapi Kredi, QNB/Finansbank, VakifBank, Halkbank, Kuveyt Turk | Bank profile detection plus deterministic Turkish generic table parser |
+
+Transaction kind detection includes `pos`, `eft`, `fast`, `atm_withdrawal`, `atm_deposit`, `credit_card_payment`, `salary`, `refund`, `bill`, `subscription`, `investment`, `transfer`, `fee`, `interest`, and `cashback`.
 
 ### CSV
 

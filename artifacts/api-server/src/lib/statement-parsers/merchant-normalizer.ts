@@ -5,7 +5,7 @@ import type {
   RecurringSubscription,
   SalarySignal,
 } from "./types";
-import { maskSensitiveData, normalizeForMatching } from "./text-utils";
+import { maskSensitiveData, normalizeForMatching, removeNoisyTokens } from "./text-utils";
 
 interface MerchantRule {
   merchant: string;
@@ -28,6 +28,8 @@ export const MERCHANT_RULES: MerchantRule[] = [
   { merchant: "Netflix", category: "subscriptions", patterns: ["netflix"], subscription: true },
   { merchant: "Apple", category: "subscriptions", patterns: ["apple.com", "apple store", "apple"], subscription: true },
   { merchant: "Google", category: "subscriptions", patterns: ["google"], subscription: true },
+  { merchant: "Microsoft", category: "subscriptions", patterns: ["microsoft", "msft"], subscription: true },
+  { merchant: "Adobe", category: "subscriptions", patterns: ["adobe"], subscription: true },
   { merchant: "Steam", category: "entertainment", patterns: ["steam"], subscription: false },
   { merchant: "Epic Games", category: "entertainment", patterns: ["epic games"], subscription: false },
   { merchant: "OpenAI", category: "subscriptions", patterns: ["openai"], subscription: true },
@@ -37,17 +39,27 @@ export const MERCHANT_RULES: MerchantRule[] = [
   { merchant: "Sok", category: "groceries", patterns: ["sok market", "sok "] },
   { merchant: "Carrefour", category: "groceries", patterns: ["carrefour"] },
   { merchant: "Getir", category: "food", patterns: ["getir", "paycell/getir"] },
+  { merchant: "Getir Buyuk", category: "groceries", patterns: ["getir buyuk", "getirbuyuk"] },
   { merchant: "Yemeksepeti", category: "food", patterns: ["yemeksepeti"] },
+  { merchant: "Tikla Gelsin", category: "food", patterns: ["tikla gelsin", "tıklagelsin"] },
   { merchant: "Trendyol", category: "shopping", patterns: ["trendyol", "s/trendyol", "trendyol.com", "trendyol milla"] },
   { merchant: "Hepsiburada", category: "shopping", patterns: ["hepsiburada"] },
+  { merchant: "N11", category: "shopping", patterns: ["n11"] },
+  { merchant: "Ciceksepeti", category: "shopping", patterns: ["ciceksepeti", "çiçeksepeti"] },
+  { merchant: "LC Waikiki", category: "shopping", patterns: ["lc waikiki", "lcw"] },
+  { merchant: "Boyner", category: "shopping", patterns: ["boyner"] },
   { merchant: "Amazon", category: "shopping", patterns: ["amazon"] },
   { merchant: "Obilet", category: "transportation", patterns: ["obilet"] },
+  { merchant: "Biletix", category: "entertainment", patterns: ["biletix"] },
+  { merchant: "THY", category: "transportation", patterns: ["turkish airlines", "thy"] },
+  { merchant: "Pegasus", category: "transportation", patterns: ["pegasus"] },
   { merchant: "Petrol Ofisi", category: "transportation", patterns: ["petrol ofisi", "po/"] },
   { merchant: "Shell", category: "transportation", patterns: ["shell"] },
   { merchant: "Opet", category: "transportation", patterns: ["opet"] },
   { merchant: "BP", category: "transportation", patterns: [" bp ", "bp petrol"] },
   { merchant: "TCDD", category: "transportation", patterns: ["tcdd"] },
   { merchant: "EGO", category: "transportation", patterns: ["ego kart"] },
+  { merchant: "Istanbulkart", category: "transportation", patterns: ["istanbulkart", "belbim"] },
   { merchant: "Kentkart", category: "transportation", patterns: ["kentkart"] },
   { merchant: "Starbucks", category: "food", patterns: ["starbucks"] },
   { merchant: "Kahve Dunyasi", category: "food", patterns: ["kahve dunyasi"] },
@@ -57,7 +69,11 @@ export const MERCHANT_RULES: MerchantRule[] = [
   { merchant: "Pizza", category: "food", patterns: ["pizza"] },
   { merchant: "Turk Telekom", category: "bills", patterns: ["tt net", "turk telekom"] },
   { merchant: "Turkcell", category: "bills", patterns: ["turkcell"] },
+  { merchant: "Vodafone", category: "bills", patterns: ["vodafone"] },
   { merchant: "Avea", category: "bills", patterns: ["avea"] },
+  { merchant: "Enerjisa", category: "bills", patterns: ["enerjisa"] },
+  { merchant: "Baskent Dogalgaz", category: "bills", patterns: ["baskent dogalgaz", "başkent doğalgaz"] },
+  { merchant: "ASKI", category: "bills", patterns: ["aski su", "aski"] },
   { merchant: "Udemy", category: "education", patterns: ["udemy"] },
   { merchant: "Pharmacy", category: "health", patterns: ["eczane", "eczanesi", "pharmacy"] },
   { merchant: "Card Payment", category: "other", patterns: ["odemetesekkur", "odeme - enpara.com cep", "subehesaptan odeme"] },
@@ -100,7 +116,7 @@ export function normalizeMerchant(description: string): MerchantNormalization {
 }
 
 export function cleanMerchantText(description: string): string {
-  const normalizedDescription = maskSensitiveData(description)
+  const normalizedDescription = removeNoisyTokens(maskSensitiveData(description))
     .replace(/\b\d{2}\s*\/\s*\d{2}\b/g, " ")
     .replace(/\b\d{1,2}\.?\s*tak\b/gi, " ")
     .replace(/\b\d+\s*\.\s*iade\b/gi, " iade ")
@@ -119,6 +135,13 @@ export function cleanMerchantText(description: string): string {
   }
 
   return words.join(" ").trim() || "Transaction";
+}
+
+export function normalizeMerchantKey(merchantOrDescription: string): string {
+  return normalizeForMatching(cleanMerchantText(merchantOrDescription))
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function discoverMerchantRules(transactions: NormalizedTransaction[]): DiscoveredRule[] {

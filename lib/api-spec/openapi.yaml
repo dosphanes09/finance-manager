@@ -655,8 +655,26 @@ components:
           type: number
         type:
           type: string
+        currency:
+          type: string
+        transactionKind:
+          type: string
+        bank:
+          type: string
+        parser:
+          type: ["string", "null"]
+        balance:
+          type: ["number", "null"]
         category:
           type: string
+        categorizationConfidence:
+          type: number
+        categorizationSource:
+          type: string
+        categorizationExplanation:
+          type: string
+        importConfidence:
+          type: number
         month:
           type: string
         notes:
@@ -665,7 +683,7 @@ components:
           type: boolean
         createdAt:
           type: string
-      required: [id, date, merchant, description, amount, type, category, month, reviewed, createdAt]
+      required: [id, date, merchant, description, amount, type, currency, transactionKind, bank, balance, category, categorizationConfidence, categorizationSource, categorizationExplanation, importConfidence, month, reviewed, createdAt]
 
     TransactionList:
       type: object
@@ -742,15 +760,29 @@ components:
         transactionType:
           type: string
           enum: [debit, credit]
+        transactionKind:
+          type: string
         balance:
           type: ["number", "null"]
         category:
+          type: string
+        bank:
+          type: string
+        parser:
+          type: string
+        confidence:
+          type: number
+        categorizationConfidence:
+          type: number
+        categorizationSource:
+          type: string
+        categorizationExplanation:
           type: string
         month:
           type: string
         isDuplicate:
           type: boolean
-      required: [date, merchant, description, amount, type, currency, transactionType, balance, category, month, isDuplicate]
+      required: [date, merchant, description, amount, type, currency, transactionType, transactionKind, balance, category, bank, parser, confidence, categorizationConfidence, categorizationSource, categorizationExplanation, month, isDuplicate]
 
     PreviewResult:
       type: object

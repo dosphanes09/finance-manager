@@ -8,10 +8,16 @@ import {
   parseCsv,
   parseExcel,
   parsePdf,
+  type ParsedTransaction,
   StatementParseError,
   type PdfParseOptions,
 } from "../lib/parsers";
-import { categorize, matchCustomRule, type CustomRule } from "../lib/categorizer";
+import { type CustomRule } from "../lib/categorizer";
+import { categorizeForImport } from "../lib/import-categorization";
+import {
+  loadMerchantMemory,
+  rememberMerchantsFromTransactions,
+} from "../lib/merchant-memory";
 import {
   UploadStatementResponse,
   PreviewStatementResponse,
@@ -190,17 +196,6 @@ async function loadCustomRules(log?: Request["log"]): Promise<CustomRule[]> {
   }
 }
 
-function categorizeImportedTransaction(
-  transaction: { merchant: string; description: string; category?: string | null },
-  customRules: CustomRule[],
-): string {
-  return (
-    matchCustomRule(transaction.merchant, transaction.description, customRules)?.category ??
-    transaction.category ??
-    categorize(transaction.merchant, transaction.description)
-  );
-}
-
 router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res): Promise<void> => {
   const file = req.file;
   if (!file) {
@@ -221,32 +216,44 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
       return;
     }
 
-    const [duplicateDetection, customRules] = await Promise.all([
-      detectDuplicates(parsed, req.log),
+    const [customRules, merchantMemory] = await Promise.all([
       loadCustomRules(req.log),
+      loadMerchantMemory(parsed),
     ]);
-    const existingKeys = duplicateDetection.existingKeys;
 
-    const preview = parsed.map((t) => {
+    const previewWithoutDuplicateFlags = await Promise.all(parsed.map(async (t) => {
       const merchant = sanitizeStoredText(t.merchant);
       const description = sanitizeStoredText(t.description);
+      const sanitizedTransaction = { ...t, merchant, description };
+      const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
 
       return {
         date: t.date,
-        merchant,
+        merchant: sanitizeStoredText(categorization.merchant),
         description,
         amount: t.amount,
         type: t.type,
         currency: t.currency ?? "TRY",
         transactionType: t.transactionType ?? t.type,
+        transactionKind: t.transactionKind ?? "other",
         balance: t.balance ?? null,
-        category: categorizeImportedTransaction({ ...t, merchant, description }, customRules),
+        category: categorization.category,
+        bank: t.bank ?? "generic",
+        parser: t.parser ?? "generic",
+        confidence: t.confidence ?? categorization.confidence,
+        categorizationConfidence: categorization.confidence,
+        categorizationSource: categorization.source,
+        categorizationExplanation: categorization.explanation,
         month: t.date.substring(0, 7),
-        isDuplicate: existingKeys.has(
-          `${t.date}|${merchant.toLowerCase()}|${t.amount.toFixed(2)}`
-        ),
       };
-    });
+    }));
+
+    const duplicateDetection = await detectDuplicates(previewWithoutDuplicateFlags, req.log);
+    const existingKeys = duplicateDetection.existingKeys;
+    const preview = previewWithoutDuplicateFlags.map((t) => ({
+      ...t,
+      isDuplicate: existingKeys.has(`${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`),
+    }));
 
     const duplicateCount = preview.filter((p) => p.isDuplicate).length;
 
@@ -282,21 +289,27 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
       description: sanitizeStoredText(t.description),
       amount: String(t.amount),
       type: t.type,
+      currency: t.currency ?? "TRY",
+      transactionKind: t.transactionKind ?? "other",
+      bank: t.bank ?? "generic",
+      parser: t.parser ?? null,
+      balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
       category: t.category,
+      categorizationConfidence: String(t.categorizationConfidence ?? 1),
+      categorizationSource: t.categorizationSource ?? "user_preview",
+      categorizationExplanation: t.categorizationExplanation ?? "Category accepted from upload preview.",
+      importConfidence: String(t.confidence ?? t.categorizationConfidence ?? 0),
       month: t.month,
     }));
 
     const inserted = await db.insert(transactionsTable).values(toInsert).returning();
+    await rememberSavedMerchants(inserted, req.log, "import");
 
     res.json(
       UploadStatementResponse.parse({
         count: inserted.length,
         skipped: body.data.transactions.length - inserted.length,
-        transactions: inserted.map((t) => ({
-          ...t,
-          amount: parseFloat(t.amount),
-          createdAt: t.createdAt.toISOString(),
-        })),
+        transactions: inserted.map(serializeUploadedTransaction),
       })
     );
   } catch (err) {
@@ -325,33 +338,45 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
       return;
     }
 
-    const customRules = await loadCustomRules(req.log);
-    const toInsert = parsed.map((t) => {
+    const [customRules, merchantMemory] = await Promise.all([
+      loadCustomRules(req.log),
+      loadMerchantMemory(parsed),
+    ]);
+
+    const categorized = await Promise.all(parsed.map(async (t) => {
       const merchant = sanitizeStoredText(t.merchant);
       const description = sanitizeStoredText(t.description);
+      const sanitizedTransaction = { ...t, merchant, description };
+      const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
 
       return {
         date: t.date,
-        merchant,
+        merchant: sanitizeStoredText(categorization.merchant),
         description,
         amount: String(t.amount),
         type: t.type,
-        category: categorizeImportedTransaction({ ...t, merchant, description }, customRules),
+        currency: t.currency ?? "TRY",
+        transactionKind: t.transactionKind ?? "other",
+        bank: t.bank ?? "generic",
+        parser: t.parser ?? null,
+        balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
+        category: categorization.category,
+        categorizationConfidence: String(categorization.confidence),
+        categorizationSource: categorization.source,
+        categorizationExplanation: categorization.explanation,
+        importConfidence: String(t.confidence ?? categorization.confidence),
         month: t.date.substring(0, 7),
       };
-    });
+    }));
 
-    const inserted = await db.insert(transactionsTable).values(toInsert).returning();
+    const inserted = await db.insert(transactionsTable).values(categorized).returning();
+    await rememberSavedMerchants(inserted, req.log, "import");
 
     res.json(
       UploadStatementResponse.parse({
         count: inserted.length,
         skipped: parsed.length - inserted.length,
-        transactions: inserted.map((t) => ({
-          ...t,
-          amount: parseFloat(t.amount),
-          createdAt: t.createdAt.toISOString(),
-        })),
+        transactions: inserted.map(serializeUploadedTransaction),
       })
     );
   } catch (err) {
@@ -429,4 +454,33 @@ function sanitizeErrorForLog(err: unknown) {
     message: err.message,
     code: typeof err === "object" && "code" in err ? String(err.code) : undefined,
   };
+}
+
+function serializeUploadedTransaction(t: typeof transactionsTable.$inferSelect) {
+  return {
+    ...t,
+    amount: parseFloat(t.amount),
+    balance: t.balance === null ? null : parseFloat(t.balance),
+    categorizationConfidence: parseFloat(t.categorizationConfidence),
+    importConfidence: parseFloat(t.importConfidence),
+    createdAt: t.createdAt.toISOString(),
+  };
+}
+
+async function rememberSavedMerchants(
+  transactions: Array<typeof transactionsTable.$inferSelect>,
+  log?: Request["log"],
+  source: "import" | "user_correction" | "custom_rule" = "import",
+): Promise<void> {
+  await rememberMerchantsFromTransactions(
+    transactions.map((transaction) => ({
+      merchant: transaction.merchant,
+      description: transaction.description,
+      category: transaction.category,
+      confidence: Number(transaction.categorizationConfidence || transaction.importConfidence || 0),
+    })),
+    source,
+  ).catch((err) => {
+    log?.warn({ error: sanitizeErrorForLog(err) }, "Failed to update merchant memory");
+  });
 }

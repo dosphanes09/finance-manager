@@ -15,9 +15,16 @@ export interface PreviewTransaction {
   type: string;
   currency: string;
   transactionType: PreviewTransactionTransactionType;
+  transactionKind: string;
   /** @nullable */
   balance: number | null;
   category: string;
+  bank: string;
+  parser: string;
+  confidence: number;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
   month: string;
   isDuplicate: boolean;
 }

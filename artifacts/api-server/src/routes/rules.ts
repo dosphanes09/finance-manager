@@ -21,6 +21,7 @@ import {
   categorizeTransactionsWithRules,
   matchesRulePattern,
 } from "../lib/rule-suggestions";
+import { rememberMerchantsFromTransactions } from "../lib/merchant-memory";
 
 const router: IRouter = Router();
 
@@ -150,18 +151,28 @@ router.post("/rules/from-transactions", async (req, res): Promise<void> => {
   }
 
   const updatedIds = new Set<number>();
+  const rememberedTransactions: Array<typeof transactionsTable.$inferSelect> = [];
   for (const [category, ids] of updatesByCategory.entries()) {
     const idList = Array.from(ids);
     if (idList.length === 0) continue;
 
     const rows = await db
       .update(transactionsTable)
-      .set({ category, reviewed: true })
+      .set({
+        category,
+        reviewed: true,
+        categorizationConfidence: "0.99",
+        categorizationSource: "custom_rule",
+        categorizationExplanation: "Category assigned by user-created rule; merchant memory updated for future imports.",
+      })
       .where(inArray(transactionsTable.id, idList))
-      .returning({ id: transactionsTable.id });
+      .returning();
 
     for (const row of rows) updatedIds.add(row.id);
+    rememberedTransactions.push(...rows);
   }
+
+  await rememberUpdatedMerchants(rememberedTransactions);
 
   res.status(201).json(
     CreateRulesFromTransactionsResponse.parse({
@@ -202,14 +213,24 @@ router.post("/rules/apply", async (_req, res): Promise<void> => {
   }
 
   let updated = 0;
+  const rememberedTransactions: Array<typeof transactionsTable.$inferSelect> = [];
   for (const [category, ids] of updatesByCategory.entries()) {
     const rows = await db
       .update(transactionsTable)
-      .set({ category, reviewed: true })
+      .set({
+        category,
+        reviewed: true,
+        categorizationConfidence: "0.99",
+        categorizationSource: "custom_rule",
+        categorizationExplanation: "Category assigned by custom rule application; merchant memory updated for future imports.",
+      })
       .where(inArray(transactionsTable.id, ids))
-      .returning({ id: transactionsTable.id });
+      .returning();
     updated += rows.length;
+    rememberedTransactions.push(...rows);
   }
+
+  await rememberUpdatedMerchants(rememberedTransactions);
 
   res.json(
     ApplyRulesToExistingTransactionsResponse.parse({
@@ -263,14 +284,24 @@ router.post("/rules/apply-selected", async (req, res): Promise<void> => {
   }
 
   let updated = 0;
+  const rememberedTransactions: Array<typeof transactionsTable.$inferSelect> = [];
   for (const [category, ids] of updatesByCategory.entries()) {
     const rows = await db
       .update(transactionsTable)
-      .set({ category, reviewed: true })
+      .set({
+        category,
+        reviewed: true,
+        categorizationConfidence: "0.99",
+        categorizationSource: "custom_rule",
+        categorizationExplanation: "Category assigned by selected custom rule application; merchant memory updated for future imports.",
+      })
       .where(inArray(transactionsTable.id, ids))
-      .returning({ id: transactionsTable.id });
+      .returning();
     updated += rows.length;
+    rememberedTransactions.push(...rows);
   }
+
+  await rememberUpdatedMerchants(rememberedTransactions);
 
   res.json(
     ApplyRulesToSelectedTransactionsResponse.parse({
@@ -312,3 +343,17 @@ router.delete("/rules/:id", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+async function rememberUpdatedMerchants(
+  transactions: Array<typeof transactionsTable.$inferSelect>,
+): Promise<void> {
+  await rememberMerchantsFromTransactions(
+    transactions.map((transaction) => ({
+      merchant: transaction.merchant,
+      description: transaction.description,
+      category: transaction.category,
+      confidence: 0.99,
+    })),
+    "custom_rule",
+  );
+}

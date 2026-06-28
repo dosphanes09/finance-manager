@@ -20,10 +20,35 @@ interface PreviewTx {
   type: string;
   currency: string;
   transactionType: string;
+  transactionKind: string;
   balance: number | null;
   category: string;
+  bank: string;
+  parser: string;
+  confidence: number;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
   month: string;
   isDuplicate: boolean;
+}
+
+function formatConfidence(value: number) {
+  return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+}
+
+function formatSource(source: string) {
+  return source.replace(/_/g, " ");
+}
+
+function formatKind(kind: string) {
+  return kind.replace(/_/g, " ");
+}
+
+function confidenceClass(value: number) {
+  if (value >= 0.9) return "text-emerald-600 border-emerald-300 bg-emerald-500/10";
+  if (value >= 0.7) return "text-amber-600 border-amber-300 bg-amber-500/10";
+  return "text-rose-600 border-rose-300 bg-rose-500/10";
 }
 
 export default function Upload() {
@@ -116,6 +141,9 @@ export default function Upload() {
   const nonDuplicates = preview.filter((t) => !t.isDuplicate);
   const duplicates = preview.filter((t) => t.isDuplicate);
   const toImport = includeDuplicates ? preview : nonDuplicates;
+  const averageConfidence = preview.length
+    ? preview.reduce((sum, transaction) => sum + (transaction.categorizationConfidence ?? 0), 0) / preview.length
+    : 0;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -183,6 +211,12 @@ export default function Upload() {
               <p className="font-medium text-sm truncate">{file?.name}</p>
               <div className="flex items-center gap-2 mt-1">
                 <Badge variant="outline">{preview.length} parsed</Badge>
+                {preview[0]?.bank && (
+                  <Badge variant="outline">{preview[0].bank}</Badge>
+                )}
+                {preview.length > 0 && (
+                  <Badge variant="outline">{formatConfidence(averageConfidence)} avg confidence</Badge>
+                )}
                 {duplicateCount > 0 && (
                   <Badge variant="outline" className="text-amber-600 border-amber-400">
                     <AlertTriangle className="w-3 h-3 mr-1" /> {duplicateCount} duplicates
@@ -246,6 +280,7 @@ export default function Upload() {
                     <TableHead>Merchant</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Confidence</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -260,9 +295,12 @@ export default function Upload() {
                       <TableCell className="text-sm">{t.date}</TableCell>
                       <TableCell className="text-sm font-medium">{t.merchant}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
-                          {t.type}
-                        </Badge>
+                        <div className="space-y-1">
+                          <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {t.type}
+                          </Badge>
+                          <div className="text-[11px] text-muted-foreground">{formatKind(t.transactionKind)}</div>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Select value={t.category} onValueChange={(val) => {
@@ -275,6 +313,19 @@ export default function Upload() {
                             {(categories ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell className="min-w-[180px]">
+                        <div className="space-y-1">
+                          <Badge variant="outline" className={`text-xs ${confidenceClass(t.categorizationConfidence)}`}>
+                            {formatConfidence(t.categorizationConfidence)}
+                          </Badge>
+                          <div className="text-[11px] text-muted-foreground">
+                            {formatSource(t.categorizationSource)}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground line-clamp-2" title={t.categorizationExplanation}>
+                            {t.categorizationExplanation}
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className={`text-right text-sm font-mono font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
                         {t.type === "credit" ? "+" : ""}{formatCurrency(t.amount)}

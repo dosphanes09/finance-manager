@@ -13,7 +13,18 @@ export interface Transaction {
   description: string;
   amount: number;
   type: string;
+  currency: string;
+  transactionKind: string;
+  bank: string;
+  /** @nullable */
+  parser?: string | null;
+  /** @nullable */
+  balance: number | null;
   category: string;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
+  importConfidence: number;
   month: string;
   /** @nullable */
   notes?: string | null;

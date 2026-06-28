@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parsePdfText, StatementParseError } from "./parsers";
-import { normalizeMerchant } from "./statement-parsers";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { parseCsv, parsePdfText, StatementParseError } from "./parsers";
+import { detectBank, normalizeMerchant } from "./statement-parsers";
+import { inferTransactionKind } from "./statement-parsers/text-utils";
 
 describe("parsePdfText", () => {
   it("parses Turkish date, amount, and balance columns", () => {
@@ -38,7 +42,7 @@ describe("parsePdfText", () => {
     assert.equal(rows.length, 1);
     assert.equal(rows[0].date, "2026-06-01");
     assert.equal(rows[0].merchant, "Trendyol");
-    assert.equal(rows[0].description, "TRENDYOL PAZARYERI SIPARIS NO 1234****");
+    assert.equal(rows[0].description, "TRENDYOL PAZARYERI SIPARIS NO");
     assert.equal(rows[0].amount, 1250.75);
     assert.equal(rows[0].type, "credit");
   });
@@ -53,6 +57,7 @@ describe("parsePdfText", () => {
     assert.equal(rows.length, 2);
     assert.equal(rows[0].amount, 2000);
     assert.equal(rows[0].type, "credit");
+    assert.equal(rows[0].transactionKind, "fast");
     assert.equal(rows[1].amount, 125.5);
     assert.equal(rows[1].type, "debit");
   });
@@ -86,6 +91,7 @@ describe("parsePdfText", () => {
     assert.equal(rows[0].merchant, "Card Payment");
     assert.equal(rows[0].amount, 3326.34);
     assert.equal(rows[0].transactionType, "credit");
+    assert.equal(rows[0].transactionKind, "credit_card_payment");
     assert.equal(rows[3].merchant, "Trendyol");
     assert.equal(rows[3].amount, 733.3);
     assert.equal(rows[4].merchant, "OpenAI");
@@ -125,6 +131,46 @@ describe("parsePdfText", () => {
     assert.equal(normalizeMerchant("BIM U650 TANDOGAN").merchant, "Bim");
     assert.equal(normalizeMerchant("IYZICO/AmazonPrimeTR ISTANBUL TR").merchant, "Amazon Prime");
     assert.equal(normalizeMerchant("GOOGLE *YouTubePremium").merchant, "YouTube Premium");
+  });
+
+  it("detects supported Turkish bank profiles before generic parsing", () => {
+    assert.equal(detectBank("Garanti BBVA Hesap Hareketleri Islem Tarihi Aciklama Borc Alacak Bakiye").bank, "garanti");
+    assert.equal(detectBank("Akbank Axess Kredi Karti Ekstresi Islem Tarihi Aciklama Tutar").bank, "akbank");
+    assert.equal(detectBank("Turkiye Is Bankasi Maximum Hesap Ekstresi Islem Tarihi Aciklama Tutar").bank, "isbank");
+    assert.equal(detectBank("Kuveyt Turk Saglam Kart Hesap Hareketleri Islem Tarihi Aciklama Tutar").bank, "kuveytturk");
+  });
+
+  it("infers Turkish transaction kinds deterministically", () => {
+    assert.equal(inferTransactionKind("FAST GELEN TRANSFER", "Sender", "credit"), "fast");
+    assert.equal(inferTransactionKind("ATM PARA CEKME", "ATM", "debit"), "atm_withdrawal");
+    assert.equal(inferTransactionKind("ATM PARA YATIRMA", "ATM", "credit"), "atm_deposit");
+    assert.equal(inferTransactionKind("MAAS ODEMESI", "Employer", "credit"), "salary");
+    assert.equal(inferTransactionKind("SPOTIFY PREMIUM", "Spotify", "debit"), "subscription");
+  });
+
+  it("detects salary credits from structured CSV descriptions", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "financeanalyzerpro-csv-"));
+    const filePath = path.join(dir, "statement.csv");
+
+    try {
+      await fs.writeFile(
+        filePath,
+        [
+          "Date,Description,Amount",
+          '2026-06-02,FAST GELEN TRANSFER MAAS ODEMESI,"25.000,00 TL"',
+        ].join("\n"),
+        "utf-8",
+      );
+
+      const rows = await parseCsv(filePath);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].amount, 25000);
+      assert.equal(rows[0].type, "credit");
+      assert.equal(rows[0].transactionKind, "salary");
+      assert.equal(rows[0].category, "income");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("throws diagnostics when text is extracted but no rows match", () => {

@@ -3,6 +3,7 @@ import {
   detectTransactionTypeFromAmount,
   extractAmountCandidates,
   findDateTokens,
+  inferTransactionKind,
   includesAny,
   normalizeForMatching,
   parseDate,
@@ -110,6 +111,7 @@ function parseEnparaBlock(blockText: string): NormalizedTransaction | null {
 
   const normalizedMerchant = normalizeMerchant(description);
   const transactionType = inferEnparaType(description, picked.raw);
+  const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, transactionType);
 
   return {
     date,
@@ -118,10 +120,16 @@ function parseEnparaBlock(blockText: string): NormalizedTransaction | null {
     amount: picked.absValue,
     currency: picked.currency ?? "TRY",
     transactionType,
+    transactionKind,
     balance: null,
     category: normalizedMerchant.category,
     parser: "enpara",
     confidence: Math.min(0.97, normalizedMerchant.confidence + 0.02),
+    categorizationConfidence: normalizedMerchant.confidence,
+    categorizationSource: normalizedMerchant.matchedPattern ? "merchant_rule" : "built_in",
+    categorizationExplanation: normalizedMerchant.matchedPattern
+      ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
+      : "Category inferred from Enpara parser and deterministic keyword rules.",
   };
 }
 

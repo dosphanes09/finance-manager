@@ -13,8 +13,10 @@ flowchart LR
   Parsers --> BankDetector["BankDetector"]
   BankDetector --> Ziraat["ZiraatParser"]
   BankDetector --> Enpara["EnparaParser"]
+  BankDetector --> BankProfiles["Turkish bank profiles\nIs Bankasi / Garanti / Akbank / etc."]
   BankDetector --> Generic["GenericParser"]
-  API --> Categorizer["Categorizer + custom rules"]
+  API --> Categorizer["Import categorization engine\ncustom rules + merchant memory + built-ins"]
+  Categorizer --> OptionalLLM["Optional low-confidence LLM fallback"]
   API --> DB["PostgreSQL fintrack"]
   DB --> Drizzle["Drizzle schema\nlib/db"]
   OpenAPI["OpenAPI spec\nlib/api-spec"] --> Client["Generated React Query client\nlib/api-client-react"]
@@ -61,6 +63,8 @@ Key files:
 - `src/routes/health.ts`: API and database health checks.
 - `src/lib/parsers.ts`: CSV/Excel/PDF entry points and PDF diagnostics.
 - `src/lib/statement-parsers/*`: Bank detection, bank-specific parsers, text utilities, merchant normalization.
+- `src/lib/import-categorization.ts`: Import-time category decisions using custom rules, merchant memory, parser rules, built-ins, and optional low-confidence LLM fallback.
+- `src/lib/merchant-memory.ts`: Persistent merchant recognition and learning from imports, rules, and user corrections.
 - `src/lib/categorizer.ts`: Built-in category keyword rules and custom-rule matching.
 - `src/lib/rule-suggestions.ts`: Deterministic rule suggestions and rule drafts.
 
@@ -78,7 +82,14 @@ Stores imported and edited transactions.
 - `description`: masked transaction description
 - `amount`: numeric(12,2)
 - `type`: `debit` or `credit`
+- `currency`: currency string, default `TRY`
+- `transactionKind`: semantic transaction kind such as `pos`, `fast`, `eft`, `salary`, `subscription`, or `credit_card_payment`
+- `bank`: detected bank/profile id
+- `parser`: parser name/id
+- `balance`: optional row balance
 - `category`: category id, default `other`
+- `categorizationConfidence`, `categorizationSource`, `categorizationExplanation`: category audit metadata
+- `importConfidence`: parser/import confidence score
 - `month`: `YYYY-MM`
 - `notes`: optional user notes
 - `reviewed`: boolean used by Needs Review workflow
@@ -104,6 +115,20 @@ Stores user-created categorization rules.
 - `category`
 - `priority`
 - `createdAt`
+
+### `merchants`
+
+Stores persistent merchant recognition memory.
+
+- `id`
+- `merchantKey`: normalized stable merchant key, unique
+- `displayName`: canonical display merchant
+- `category`
+- `pattern`
+- `source`: `import`, `user_correction`, `custom_rule`, or deterministic source
+- `confidence`
+- `timesSeen`
+- `lastSeenAt`, `createdAt`, `updatedAt`
 
 ## 5. Drizzle ORM Usage
 
@@ -142,11 +167,13 @@ sequenceDiagram
   UI->>API: multipart file
   API->>Parser: parse file by extension
   Parser-->>API: normalized transactions
-  API->>DB: duplicate lookup by date
+  API->>DB: load custom rules and merchant memory
+  API->>API: categorize with confidence metadata
+  API->>DB: duplicate lookup by date/merchant/amount
   DB-->>API: existing keys
   API-->>UI: preview rows + duplicate flags
   UI->>API: /api/upload/confirm with accepted rows
-  API->>DB: insert non-duplicates
+  API->>DB: insert non-duplicates and update merchant memory
   DB-->>API: inserted rows
   API-->>UI: import result
 ```
@@ -157,8 +184,8 @@ There is also a legacy one-step `POST /api/upload` route that parses and saves i
 
 `src/lib/parsers.ts` exposes:
 
-- `parseCsv(filePath)`: reads UTF-8 CSV, parses with PapaParse, normalizes rows.
-- `parseExcel(filePath)`: reads first worksheet with `xlsx`, normalizes rows.
+- `parseCsv(filePath)`: reads UTF-8 CSV, parses with PapaParse, normalizes rows into the canonical import schema.
+- `parseExcel(filePath)`: reads first worksheet with `xlsx`, normalizes rows into the canonical import schema.
 - `parsePdf(filePath, options)`: reads PDF buffer, extracts selectable text with `pdf-parse`, then calls `parsePdfText`.
 - `parsePdfText(rawText)`: calls `parseStatementText` in the bank parser module and converts normalized transactions to API parser rows.
 
@@ -171,6 +198,7 @@ The bank-specific parser system is in `src/lib/statement-parsers`.
 - `BankDetector` scores all parsers and selects the highest confidence parser.
 - `ZiraatParser` detects Ziraat/Bankkart statements and reads rows after the Bankkart table header. It expects `dd.MM.yyyy` dates and trailing TL amount columns.
 - `EnparaParser` detects Enpara credit card statements and reads rows after the `Islem tarihi Aciklama Taksit Tutar` header. It supports installment/foreign-currency hints and single amount columns.
+- Turkish bank profile parsers detect Is Bankasi, Garanti BBVA, Akbank, Yapi Kredi, QNB/Finansbank, VakifBank, Halkbank, and Kuveyt Turk from bank keywords/card brands, then use generic Turkish transaction table rules until bank-specific sampled layouts are added.
 - `GenericParser` groups lines by transaction-like date blocks, detects amount columns, optional debit/credit labels, and optional balance columns.
 
 Each parser returns a `StatementParseResult` with layout metadata, parser confidence, normalized transactions, discovered rules, recurring subscriptions, salary signals, and warnings.
@@ -186,15 +214,20 @@ Normalized transactions use the schema:
   merchant,
   amount,
   currency,
-  transactionType,
+  transactionType, // debit or credit
+  transactionKind, // pos, eft, fast, salary, refund, etc.
   balance,
   category,
+  categorizationConfidence,
+  categorizationSource,
+  categorizationExplanation,
+  bank,
   parser,
   confidence
 }
 ```
 
-Dates are normalized to `YYYY-MM-DD`. Amount parsing supports Turkish and common decimal/thousands formats. Descriptions are cleaned of dates, amounts, installments, and obvious metadata. Sensitive numbers are masked by parser text utilities before storage.
+Dates are normalized to `YYYY-MM-DD`. Amount parsing supports Turkish and common decimal/thousands formats. Descriptions are cleaned of dates, amounts, POS/reference/auth codes, masked card fragments, timestamps, installments, and obvious metadata. Sensitive numbers are masked by parser text utilities before storage.
 
 ## 11. Merchant Normalization
 
@@ -207,17 +240,23 @@ The normalizer:
 - matches known merchant patterns such as Migros, A101, Bim, Sok, Carrefour, Spotify, Netflix, Steam, Apple, Google, Amazon, Trendyol, Obilet, Petrol Ofisi, Shell, Opet, BP, and others
 - falls back to a title-cased merchant from the cleaned description
 - returns a category and confidence with the merchant
+- produces a normalized merchant key used by the persistent `merchants` table
 
 ## 12. Categorization Engine
 
-`categorizer.ts` has two deterministic stages:
+Import categorization is orchestrated in `import-categorization.ts`.
+
+Decision order:
 
 1. User custom rules, matched by normalized substring.
-2. Built-in category keyword rules.
+2. Persistent merchant memory from previous imports, rules, and user corrections.
+3. Parser merchant rules from deterministic merchant normalization.
+4. Built-in category keyword rules.
+5. Optional LLM fallback only when explicitly enabled and deterministic confidence is below `LLM_CATEGORIZATION_CONFIDENCE_THRESHOLD`.
 
 Categories include groceries, food, transportation, bills, subscriptions, shopping, education, health, entertainment, rent, income, and other.
 
-No AI is currently used for categorization.
+LLM calls are disabled by default and require `LLM_CATEGORIZATION_ENABLED=true`, `LLM_CATEGORIZATION_ENDPOINT`, and `LLM_CATEGORIZATION_API_KEY`.
 
 ## 13. Custom Rules
 
@@ -231,7 +270,7 @@ Custom rules can be created from:
 - multiple selected transactions
 - the smart prompt after inline category edits
 
-Rules are ordered by priority and creation time in backend queries. User-created rules override built-ins for imports and rule application.
+Rules are ordered by priority and creation time in backend queries. User-created rules override built-ins for imports and rule application. Inline category changes, bulk categorization, rule creation from transactions, and rule application also update merchant memory with high confidence so future imports improve automatically.
 
 ## 14. Rule Suggestions
 
@@ -245,7 +284,7 @@ Suggestions group similar merchants/descriptions, provide a rule pattern, sugges
 
 ## 15. Duplicate Detection
 
-Duplicate detection runs in upload preview.
+Duplicate detection runs in upload preview after categorization and merchant-memory normalization.
 
 The API:
 
@@ -253,7 +292,7 @@ The API:
 2. Validates upload extension, MIME metadata, and file signature/content before parser execution.
 3. Writes temporary files under `.local/uploads` with UUID filenames, then deletes them after parsing.
 4. Finds existing transactions with matching dates.
-5. Builds keys as `date|merchant|amount`.
+5. Builds keys as `date|merchant|amount` using the normalized preview merchant.
 6. Flags matching preview rows as duplicates.
 
 If the database is unavailable during preview, parsing still succeeds and the response includes a warning that duplicate detection was skipped.

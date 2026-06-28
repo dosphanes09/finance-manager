@@ -17,6 +17,7 @@ export interface TransactionForRuleAnalysis {
   type?: string;
   category: string;
   reviewed?: boolean;
+  categorizationConfidence?: string | number;
 }
 
 export interface RuleSuggestion {
@@ -244,11 +245,15 @@ export function needsRuleReview(transaction: TransactionForRuleAnalysis): boolea
     "odeme",
   ].some((generic) => normalizedMerchant.includes(generic) || normalizedDescription === generic);
   const isLowConfidence = suggested.confidence < 0.65;
+  const storedConfidence = transaction.categorizationConfidence === undefined
+    ? 1
+    : Number(transaction.categorizationConfidence);
 
   return (
     transaction.category === "other" ||
     isGenericMerchant ||
     isLowConfidence ||
+    storedConfidence < 0.7 ||
     (suggestedCategory !== "other" && suggestedCategory !== transaction.category)
   );
 }

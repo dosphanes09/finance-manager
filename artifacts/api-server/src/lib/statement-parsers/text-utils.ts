@@ -1,4 +1,4 @@
-import type { TransactionType } from "./types";
+import type { TransactionKind, TransactionType } from "./types";
 
 export interface AmountCandidate {
   raw: string;
@@ -172,13 +172,58 @@ export function maskSensitiveData(text: string): string {
     .trim();
 }
 
+export function removeNoisyTokens(text: string): string {
+  return text
+    .replace(/\b\d{1,2}[:.]\d{2}(?::\d{2})?\b/g, " ")
+    .replace(/\b(?:pos|provizyon|authorization|auth|onay|referans|ref|rrn|stan|batch|terminal|terminal no|uye isyeri|is yeri no|islem no|dekont no|fis no|belge no)\b[:#-]?\s*[A-Z0-9-]{3,}/giu, " ")
+    .replace(/\b(?:kart|card|masked|maskeli)\s*(?:no|numarasi|number)?\s*[:#-]?\s*(?:\*{2,}|X{2,}|x{2,})?\d{2,6}\b/giu, " ")
+    .replace(/\b(?:\*{2,}|X{2,}|x{2,})\d{2,6}\b/g, " ")
+    .replace(/\b[A-Z]{1,4}\d{5,}\b/g, " ")
+    .replace(/\bP\d{5,}\b/gi, " ")
+    .replace(/\b\d{6,}\b/g, " ")
+    .replace(/\b\d{1,2}\.?\s*tak(?:sit)?\b/gi, " ")
+    .replace(/\b(?:islemin|i\u015flemin)\s+\d+\s*\/\s*\d+\s+(?:taksidi|iadesi)\b/gi, " ")
+    .replace(/\b\d+\s*\/\s*\d+\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function cleanDescription(text: string): string {
   return maskSensitiveData(
-    removeDatesAndAmounts(text)
+    removeNoisyTokens(removeDatesAndAmounts(text))
       .replace(/\b(?:islem|i\u015flem|tarih|tarihi|aciklama|a\u00e7\u0131klama|borc|bor\u00e7|alacak|bakiye|debit|credit|balance|amount|tutar)\b/gi, " ")
       .replace(/\b\d{1,2}\.?\s*tak\b/gi, " ")
       .replace(/\b(?:islemin|i\u015flemin)\s+\d+\s*\/\s*\d+\s+(?:taksidi|iadesi)\b/gi, " ")
       .replace(/\s+/g, " ")
       .trim(),
   );
+}
+
+export function inferTransactionKind(
+  description: string,
+  merchant: string,
+  direction: TransactionType,
+): TransactionKind {
+  const normalized = normalizeForMatching(`${merchant} ${description}`);
+
+  if (includesAny(normalized, ["maas", "salary", "payroll", "ucret odemesi"])) return "salary";
+  if (includesAny(normalized, ["iade", "refund", "ters ibraz", "chargeback"])) return "refund";
+  if (includesAny(normalized, ["fast", "fonlarin anlik", "kolay adres"])) return "fast";
+  if (includesAny(normalized, ["eft", "elektronik fon transferi"])) return "eft";
+  if (includesAny(normalized, ["atm", "bankamatik"])) {
+    return direction === "credit" ? "atm_deposit" : "atm_withdrawal";
+  }
+  if (includesAny(normalized, ["kredi karti odeme", "kredi karti borc", "kk odeme", "odemetesekkur", "subehesaptan odeme", "odeme enpara.com cep", "enpara.com cep subesi"])) {
+    return "credit_card_payment";
+  }
+  if (includesAny(normalized, ["fatura", "abonelik", "otomatik odeme", "elektrik", "dogalgaz", "su faturasi", "gsm", "internet"])) return "bill";
+  if (includesAny(normalized, ["spotify", "netflix", "youtube premium", "apple.com", "google", "amazon prime", "openai", "abonelik"])) return "subscription";
+  if (includesAny(normalized, ["hisse", "fon", "repo", "tahvil", "viop", "yatirim", "menkul", "borsa"])) return "investment";
+  if (includesAny(normalized, ["komisyon", "masraf", "ucret", "aidat"])) return "fee";
+  if (includesAny(normalized, ["faiz", "interest"])) return "interest";
+  if (includesAny(normalized, ["cashback", "para puan", "bankkart lira", "bonus", "chip para"])) return "cashback";
+  if (includesAny(normalized, ["pos", "sanal pos", "alisveris", "harcama", "market", "restoran", "ticaret"])) return "pos";
+  if (includesAny(normalized, ["havale", "virman", "transfer", "gonderen", "alici"])) return "transfer";
+
+  return "other";
 }
