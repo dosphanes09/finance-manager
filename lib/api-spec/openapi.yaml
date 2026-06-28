@@ -40,6 +40,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  /health/db:
+    get:
+      operationId: databaseHealthCheck
+      tags: [health]
+      summary: Database health check
+      responses:
+        "200":
+          description: Database is reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseHealthStatus"
+        "503":
+          description: Database is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatabaseHealthStatus"
+
   /upload:
     post:
       operationId: uploadStatement
@@ -437,6 +456,53 @@ components:
         status:
           type: string
       required: [status]
+
+    SanitizedDatabaseUrl:
+      type: object
+      properties:
+        scheme:
+          type: string
+        host:
+          type: string
+        port:
+          type: string
+        database:
+          type: string
+        user:
+          type: string
+        password:
+          type: string
+      required: [scheme, host, port, database, user, password]
+
+    DatabaseEnvironment:
+      type: object
+      properties:
+        envFileLoaded:
+          type: ["string", "null"]
+        databaseUrl:
+          anyOf:
+            - $ref: "#/components/schemas/SanitizedDatabaseUrl"
+            - type: "null"
+      required: [envFileLoaded, databaseUrl]
+
+    DatabaseHealthStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        environment:
+          $ref: "#/components/schemas/DatabaseEnvironment"
+        server:
+          type: object
+          additionalProperties: true
+        tables:
+          type: array
+          items:
+            type: string
+        error:
+          type: object
+          additionalProperties: true
+      required: [connected, environment]
 
     ErrorResponse:
       type: object

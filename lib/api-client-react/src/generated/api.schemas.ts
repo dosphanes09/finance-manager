@@ -9,6 +9,33 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface SanitizedDatabaseUrl {
+  scheme: string;
+  host: string;
+  port: string;
+  database: string;
+  user: string;
+  password: string;
+}
+
+export interface DatabaseEnvironment {
+  /** @nullable */
+  envFileLoaded: string | null;
+  databaseUrl: SanitizedDatabaseUrl | null;
+}
+
+export type DatabaseHealthStatusServer = { [key: string]: unknown };
+
+export type DatabaseHealthStatusError = { [key: string]: unknown };
+
+export interface DatabaseHealthStatus {
+  connected: boolean;
+  environment: DatabaseEnvironment;
+  server?: DatabaseHealthStatusServer;
+  tables?: string[];
+  error?: DatabaseHealthStatusError;
+}
+
 export type ErrorResponseDetails = { [key: string]: unknown };
 
 export interface ErrorResponse {

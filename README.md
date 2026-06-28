@@ -57,22 +57,24 @@ brew install postgresql@16 && brew services start postgresql@16
 |---|---|---|---|
 | `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
 | `SESSION_SECRET` | ✅ | — | Secret for signing sessions (any long random string) |
+| `FINANCE_ANALYZER_ENV_FILE` | no | auto-detected root `.env` | Optional explicit path to the env file used by DB tooling and the API |
 | `PORT` (API) | no | `8080` | Express API listen port |
 | `PORT` (frontend) | no | `5173` | Vite dev server port (set in `artifacts/finance-app/.env`) |
 | `BASE_PATH` | no | `/` | Vite base path (set in `artifacts/finance-app/.env`) |
 | `API_PORT` | no | `8080` | API port the Vite proxy forwards to (local dev only) |
+| `PDF_PARSE_DEBUG` | no | `false` | Save selectable-PDF parser debug text and print the first extracted lines |
 
 ### Example `DATABASE_URL` formats
 
 ```
 # Local PostgreSQL, default OS user
-DATABASE_URL=postgresql://localhost:5432/finance_analyzer_pro
+DATABASE_URL=postgresql://localhost:5432/fintrack
 
 # With explicit credentials
-DATABASE_URL=postgresql://myuser:mypassword@localhost:5432/finance_analyzer_pro
+DATABASE_URL=postgresql://myuser:mypassword@localhost:5432/fintrack
 
 # Supabase / Neon / Railway (paste from their dashboard)
-DATABASE_URL=postgresql://user:pass@db.example.com:5432/finance_analyzer_pro?sslmode=require
+DATABASE_URL=postgresql://user:pass@db.example.com:5432/fintrack?sslmode=require
 ```
 
 ### Generate a SESSION_SECRET
@@ -97,12 +99,14 @@ This prepared local workspace lives at `C:\Projects\FinanceAnalyzerPro`.
 ### 2. Configure environment
 
 ```powershell
-# Root .env - read by the API server
+# Root .env - read by Drizzle, the DB package, and the API server
 Copy-Item .env.example .env
 # Edit .env: set DATABASE_URL and SESSION_SECRET.
 ```
 
 In this prepared workspace, `.env` has already been created with local defaults. Update `DATABASE_URL` if your PostgreSQL username/password or host differs.
+
+The API does not need `artifacts/api-server/.env`. Keep database settings in the project root `.env` so Drizzle pushes and API runtime queries use the same connection string. If you need to force a different env file, set `FINANCE_ANALYZER_ENV_FILE` to its absolute path.
 
 The `artifacts/finance-app/.env` file ships with correct local defaults (`PORT=5173`, `BASE_PATH=/`). You normally don't need to touch it.
 
@@ -110,15 +114,23 @@ The `artifacts/finance-app/.env` file ships with correct local defaults (`PORT=5
 
 ```bash
 # Create the database (adjust username if needed)
-createdb finance_analyzer_pro
-# or: psql -U postgres -c "CREATE DATABASE finance_analyzer_pro;"
+createdb fintrack
+# or: psql -U postgres -c "CREATE DATABASE fintrack;"
 ```
 
 On Windows, if `createdb` is not in PATH, open the SQL Shell (`psql`) or pgAdmin and run:
 
 ```sql
-CREATE DATABASE finance_analyzer_pro;
+CREATE DATABASE fintrack;
 ```
+
+This workspace can also run PostgreSQL from the ignored local cluster at `.local/postgres-data`:
+
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\pg_ctl.exe" -D "C:\Projects\FinanceAnalyzerPro\.local\postgres-data" -l "C:\Projects\FinanceAnalyzerPro\.local\logs\postgres.log" -o "-p 5432 -h localhost" start
+```
+
+The `.local` folder is ignored by git and must not be committed.
 
 ### 4. Push the schema
 
@@ -145,6 +157,39 @@ pnpm --filter @workspace/finance-app run dev
 Open **http://localhost:5173** in your browser.
 
 > The Vite dev server automatically proxies all `/api/*` requests to `localhost:8080` — no extra config needed.
+
+### 6. Verify database connectivity from the API
+
+With the API server running, check the DB health endpoint:
+
+```powershell
+curl.exe http://127.0.0.1:8080/api/health/db
+```
+
+Expected when PostgreSQL is reachable:
+
+```json
+{
+  "connected": true,
+  "environment": {
+    "envFileLoaded": "C:\\Projects\\FinanceAnalyzerPro\\.env",
+    "databaseUrl": {
+      "scheme": "postgresql",
+      "host": "localhost",
+      "port": "5432",
+      "database": "fintrack",
+      "user": "postgres",
+      "password": "<redacted>"
+    }
+  }
+}
+```
+
+If this returns `503` with `ECONNREFUSED`, the API loaded the env file but cannot reach PostgreSQL. Verify the database process is listening before trying Upload duplicate detection:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 5432
+```
 
 ### VS Code shortcut
 
@@ -173,7 +218,7 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 │   │   │   │   ├── categories.ts   ← GET /api/categories
 │   │   │   │   ├── dashboard.ts    ← GET /api/dashboard
 │   │   │   │   ├── demo.ts         ← POST /api/demo  |  DELETE /api/data
-│   │   │   │   ├── health.ts       ← GET /api/healthz
+│   │   │   │   ├── health.ts       ← GET /api/healthz | /api/health/db
 │   │   │   │   ├── insights.ts     ← GET /api/insights
 │   │   │   │   ├── rules.ts        ← CRUD /api/rules
 │   │   │   │   ├── transactions.ts ← CRUD + /bulk-categorize

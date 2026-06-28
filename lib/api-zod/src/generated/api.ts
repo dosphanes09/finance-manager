@@ -17,6 +17,28 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Database health check
+ */
+export const DatabaseHealthCheckResponse = zod.object({
+  "connected": zod.boolean(),
+  "environment": zod.object({
+  "envFileLoaded": zod.string().nullable(),
+  "databaseUrl": zod.union([zod.object({
+  "scheme": zod.string(),
+  "host": zod.string(),
+  "port": zod.string(),
+  "database": zod.string(),
+  "user": zod.string(),
+  "password": zod.string()
+}),zod.null()])
+}),
+  "server": zod.record(zod.string(), zod.unknown()).optional(),
+  "tables": zod.array(zod.string()).optional(),
+  "error": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+
+/**
  * @summary Upload and parse a bank statement file (CSV, Excel, PDF)
  */
 export const UploadStatementResponse = zod.object({
