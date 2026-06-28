@@ -177,7 +177,10 @@ router.post("/upload/preview", upload.single("file"), async (req, res): Promise<
       description: t.description,
       amount: t.amount,
       type: t.type,
-      category: categorize(t.merchant, t.description),
+      currency: t.currency ?? "TRY",
+      transactionType: t.transactionType ?? t.type,
+      balance: t.balance ?? null,
+      category: t.category ?? categorize(t.merchant, t.description),
       month: t.date.substring(0, 7),
       isDuplicate: existingKeys.has(
         `${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`
@@ -266,7 +269,7 @@ router.post("/upload", upload.single("file"), async (req, res): Promise<void> =>
       description: t.description,
       amount: String(t.amount),
       type: t.type,
-      category: categorize(t.merchant, t.description),
+      category: t.category ?? categorize(t.merchant, t.description),
       month: t.date.substring(0, 7),
     }));
 

@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs/promises";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { parseStatementText, type NormalizedTransaction } from "./statement-parsers";
 
 export interface ParsedTransaction {
   date: string;
@@ -11,6 +12,12 @@ export interface ParsedTransaction {
   description: string;
   amount: number;
   type: "debit" | "credit";
+  currency?: string;
+  transactionType?: "debit" | "credit";
+  balance?: number | null;
+  category?: string;
+  parser?: string;
+  confidence?: number;
 }
 
 export interface PdfDiagnosticLine {
@@ -326,35 +333,42 @@ export async function parsePdf(filePath: string, options: PdfParseOptions = {}):
 
 export function parsePdfText(rawText: string, options: PdfParseOptions = {}): ParsedTransaction[] {
   const lines = splitPdfLines(rawText);
-  const blocks = buildTransactionBlocks(lines);
-  const layout = detectColumnLayout(lines);
-  const rejectedBlocks: RejectedBlock[] = [];
-  const transactions: ParsedTransaction[] = [];
 
   if (rawText.trim().length === 0) {
     throw new StatementParseError(
       "PDF text extraction returned no selectable text.",
-      buildPdfDiagnostics(lines, blocks, rejectedBlocks, options.debugTextPath, "No selectable text was extracted from the PDF."),
+      buildPdfDiagnostics(lines, [], [], options.debugTextPath, "No selectable text was extracted from the PDF."),
     );
   }
 
-  for (const block of blocks) {
-    const parsed = parsePdfTransactionBlock(block, layout);
-    if ("transaction" in parsed) {
-      transactions.push(parsed.transaction);
-    } else {
-      rejectedBlocks.push(parsed);
-    }
-  }
+  const parseResult = parseStatementText(rawText);
+  const transactions = parseResult.transactions.map(toParsedTransaction);
 
   if (transactions.length === 0) {
+    const blocks = buildTransactionBlocks(lines);
     throw new StatementParseError(
       "PDF text extracted successfully but no transaction rows matched.",
-      buildPdfDiagnostics(lines, blocks, rejectedBlocks, options.debugTextPath),
+      buildPdfDiagnostics(lines, blocks, [], options.debugTextPath),
     );
   }
 
   return transactions;
+}
+
+function toParsedTransaction(transaction: NormalizedTransaction): ParsedTransaction {
+  return {
+    date: transaction.date,
+    merchant: transaction.merchant,
+    description: transaction.description,
+    amount: transaction.amount,
+    type: transaction.transactionType,
+    currency: transaction.currency,
+    transactionType: transaction.transactionType,
+    balance: transaction.balance,
+    category: transaction.category,
+    parser: transaction.parser,
+    confidence: transaction.confidence,
+  };
 }
 
 function splitPdfLines(rawText: string): string[] {

@@ -523,13 +523,20 @@ components:
           type: number
         type:
           type: string
+        currency:
+          type: string
+        transactionType:
+          type: string
+          enum: [debit, credit]
+        balance:
+          type: ["number", "null"]
         category:
           type: string
         month:
           type: string
         isDuplicate:
           type: boolean
-      required: [date, merchant, description, amount, type, category, month, isDuplicate]
+      required: [date, merchant, description, amount, type, currency, transactionType, balance, category, month, isDuplicate]
 
     PreviewResult:
       type: object

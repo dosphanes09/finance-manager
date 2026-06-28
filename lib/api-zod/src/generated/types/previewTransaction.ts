@@ -5,6 +5,7 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { PreviewTransactionTransactionType } from './previewTransactionTransactionType';
 
 export interface PreviewTransaction {
   date: string;
@@ -12,6 +13,10 @@ export interface PreviewTransaction {
   description: string;
   amount: number;
   type: string;
+  currency: string;
+  transactionType: PreviewTransactionTransactionType;
+  /** @nullable */
+  balance: number | null;
   category: string;
   month: string;
   isDuplicate: boolean;

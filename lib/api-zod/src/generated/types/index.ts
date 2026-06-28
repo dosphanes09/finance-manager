@@ -31,6 +31,7 @@ export * from './monthComparison';
 export * from './monthlyTrend';
 export * from './previewResult';
 export * from './previewTransaction';
+export * from './previewTransactionTransactionType';
 export * from './rule';
 export * from './transaction';
 export * from './transactionList';

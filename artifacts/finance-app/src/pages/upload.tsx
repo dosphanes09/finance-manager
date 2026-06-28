@@ -18,6 +18,9 @@ interface PreviewTx {
   description: string;
   amount: number;
   type: string;
+  currency: string;
+  transactionType: string;
+  balance: number | null;
   category: string;
   month: string;
   isDuplicate: boolean;

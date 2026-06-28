@@ -47,6 +47,9 @@ export const PreviewStatementResponse = zod.object({
   "description": zod.string(),
   "amount": zod.number(),
   "type": zod.string(),
+  "currency": zod.string(),
+  "transactionType": zod.enum(['debit', 'credit']),
+  "balance": zod.number().nullable(),
   "category": zod.string(),
   "month": zod.string(),
   "isDuplicate": zod.boolean()
@@ -66,6 +69,9 @@ export const ConfirmUploadBody = zod.object({
   "description": zod.string(),
   "amount": zod.number(),
   "type": zod.string(),
+  "currency": zod.string(),
+  "transactionType": zod.enum(['debit', 'credit']),
+  "balance": zod.number().nullable(),
   "category": zod.string(),
   "month": zod.string(),
   "isDuplicate": zod.boolean()

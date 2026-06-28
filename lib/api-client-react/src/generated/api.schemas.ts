@@ -49,12 +49,24 @@ export interface BulkCategorizeResult {
   updated: number;
 }
 
+export type PreviewTransactionTransactionType = typeof PreviewTransactionTransactionType[keyof typeof PreviewTransactionTransactionType];
+
+
+export const PreviewTransactionTransactionType = {
+  debit: 'debit',
+  credit: 'credit',
+} as const;
+
 export interface PreviewTransaction {
   date: string;
   merchant: string;
   description: string;
   amount: number;
   type: string;
+  currency: string;
+  transactionType: PreviewTransactionTransactionType;
+  /** @nullable */
+  balance: number | null;
   category: string;
   month: string;
   isDuplicate: boolean;
