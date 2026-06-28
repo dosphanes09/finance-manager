@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, asc, and, like, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, sql, inArray } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
+import { needsRuleReview } from "../lib/rule-suggestions";
 import {
   ListTransactionsQueryParams,
   ListTransactionsResponse,
@@ -39,11 +40,23 @@ router.get("/transactions", async (req, res): Promise<void> => {
     return;
   }
 
-  const { month, category, type, search, limit = 100, offset = 0, sortBy = "date", sortDir = "desc" } = params.data;
+  const {
+    month,
+    category,
+    merchant,
+    needsReview,
+    type,
+    search,
+    limit = 100,
+    offset = 0,
+    sortBy = "date",
+    sortDir = "desc",
+  } = params.data;
 
   const conditions = [];
   if (month) conditions.push(eq(transactionsTable.month, month));
   if (category) conditions.push(eq(transactionsTable.category, category));
+  if (merchant) conditions.push(sql`${transactionsTable.merchant} ilike ${"%" + merchant + "%"}`);
   if (type) conditions.push(eq(transactionsTable.type, type));
   if (search) {
     conditions.push(
@@ -59,6 +72,31 @@ router.get("/transactions", async (req, res): Promise<void> => {
   }[sortBy] ?? transactionsTable.date;
 
   const orderBy = sortDir === "asc" ? asc(sortColumn as typeof transactionsTable.date) : desc(sortColumn as typeof transactionsTable.date);
+
+  if (needsReview) {
+    const allRows = await db
+      .select()
+      .from(transactionsTable)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(orderBy);
+
+    const filtered = allRows.filter((row) => needsRuleReview({
+      id: row.id,
+      merchant: row.merchant,
+      description: row.description,
+      amount: row.amount,
+      type: row.type,
+      category: row.category,
+    }));
+
+    res.json(
+      ListTransactionsResponse.parse({
+        transactions: filtered.slice(offset, offset + limit).map(serializeTransaction),
+        total: filtered.length,
+      })
+    );
+    return;
+  }
 
   const [rows, countRows] = await Promise.all([
     db

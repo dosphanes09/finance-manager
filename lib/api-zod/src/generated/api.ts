@@ -127,6 +127,8 @@ export const listTransactionsQueryOffsetDefault = 0;
 export const ListTransactionsQueryParams = zod.object({
   "month": zod.coerce.string().optional(),
   "category": zod.coerce.string().optional(),
+  "merchant": zod.coerce.string().optional(),
+  "needsReview": zod.coerce.boolean().optional(),
   "type": zod.coerce.string().optional(),
   "search": zod.coerce.string().optional(),
   "sortBy": zod.enum(['date', 'amount', 'category', 'merchant']).optional(),
@@ -382,6 +384,54 @@ export const ListRuleSuggestionsResponseItem = zod.object({
 }))
 })
 export const ListRuleSuggestionsResponse = zod.array(ListRuleSuggestionsResponseItem)
+
+
+/**
+ * @summary Build rule drafts from selected transactions
+ */
+export const CreateRuleDraftsFromTransactionsBody = zod.object({
+  "transactionIds": zod.array(zod.number())
+})
+
+export const CreateRuleDraftsFromTransactionsResponseItem = zod.object({
+  "groupKey": zod.string(),
+  "transactionIds": zod.array(zod.number()),
+  "transactionCount": zod.number(),
+  "normalizedMerchant": zod.string(),
+  "pattern": zod.string(),
+  "suggestedCategory": zod.string(),
+  "currentCategories": zod.array(zod.object({
+  "category": zod.string(),
+  "count": zod.number()
+})),
+  "sampleDescriptions": zod.array(zod.string())
+})
+export const CreateRuleDraftsFromTransactionsResponse = zod.array(CreateRuleDraftsFromTransactionsResponseItem)
+
+
+/**
+ * @summary Create custom rules from selected transactions
+ */
+export const CreateRulesFromTransactionsBody = zod.object({
+  "rules": zod.array(zod.object({
+  "transactionIds": zod.array(zod.number()),
+  "pattern": zod.string(),
+  "category": zod.string(),
+  "applyToMatches": zod.boolean(),
+  "priority": zod.number().optional()
+}))
+})
+
+export const CreateRulesFromTransactionsResponse = zod.object({
+  "createdRules": zod.array(zod.object({
+  "id": zod.number(),
+  "pattern": zod.string(),
+  "category": zod.string(),
+  "priority": zod.number(),
+  "createdAt": zod.string()
+})),
+  "updated": zod.number()
+})
 
 
 /**

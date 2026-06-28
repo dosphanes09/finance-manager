@@ -11,6 +11,8 @@ import type { ListTransactionsSortDir } from './listTransactionsSortDir';
 export type ListTransactionsParams = {
 month?: string;
 category?: string;
+merchant?: string;
+needsReview?: boolean;
 type?: string;
 search?: string;
 sortBy?: ListTransactionsSortBy;

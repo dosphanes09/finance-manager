@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import { categorize } from "./categorizer";
 import {
   buildRuleSuggestions,
+  buildRuleDraftsFromTransactions,
   categorizeTransactionsWithRules,
+  suggestRulePattern,
   type TransactionForRuleAnalysis,
 } from "./rule-suggestions";
 
@@ -87,5 +89,22 @@ describe("rule suggestions", () => {
       categorize("M\u0130GROS", "M\u0130GROS SANAL", [{ pattern: "migros", category: "groceries" }]),
       "groceries",
     );
+  });
+
+  it("builds clean rule patterns from noisy transaction descriptions", () => {
+    assert.equal(suggestRulePattern("MIGROS TICARET A.S. 1234 POS", "05.06.2026 MIGROS TICARET A.S. 250,75 TL"), "Migros");
+    assert.equal(suggestRulePattern("SPOTIFY P123456", "SPOTIFY P123456"), "Spotify");
+    assert.equal(suggestRulePattern("TRENDYOL 8459234", "TRENDYOL 8459234 1/3 TAKSIT"), "Trendyol");
+  });
+
+  it("groups selected transaction drafts by normalized merchant", () => {
+    const drafts = buildRuleDraftsFromTransactions(transactions);
+
+    const migros = drafts.find((draft) => draft.normalizedMerchant === "Migros");
+    assert.deepEqual(migros?.transactionIds.sort((a, b) => a - b), [1, 2]);
+    assert.equal(migros?.pattern, "Migros");
+
+    const merchantNames = drafts.map((draft) => draft.normalizedMerchant);
+    assert.deepEqual(merchantNames.sort(), ["Migros", "Obilet", "Spotify"]);
   });
 });

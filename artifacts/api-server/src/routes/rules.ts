@@ -7,11 +7,17 @@ import {
   CreateRuleResponse,
   DeleteRuleParams,
   ListRuleSuggestionsResponse,
+  CreateRuleDraftsFromTransactionsBody,
+  CreateRuleDraftsFromTransactionsResponse,
+  CreateRulesFromTransactionsBody,
+  CreateRulesFromTransactionsResponse,
   ApplyRulesToExistingTransactionsResponse,
 } from "@workspace/api-zod";
 import {
+  buildRuleDraftsFromTransactions,
   buildRuleSuggestions,
   categorizeTransactionsWithRules,
+  matchesRulePattern,
 } from "../lib/rule-suggestions";
 
 const router: IRouter = Router();
@@ -53,6 +59,111 @@ router.get("/rules/suggestions", async (_req, res): Promise<void> => {
   ]);
 
   res.json(ListRuleSuggestionsResponse.parse(buildRuleSuggestions(transactions, rules)));
+});
+
+router.post("/rules/draft", async (req, res): Promise<void> => {
+  const body = CreateRuleDraftsFromTransactionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const transactionIds = [...new Set(body.data.transactionIds)];
+  if (transactionIds.length === 0) {
+    res.json(CreateRuleDraftsFromTransactionsResponse.parse([]));
+    return;
+  }
+
+  const transactions = await db
+    .select({
+      id: transactionsTable.id,
+      merchant: transactionsTable.merchant,
+      description: transactionsTable.description,
+      amount: transactionsTable.amount,
+      category: transactionsTable.category,
+    })
+    .from(transactionsTable)
+    .where(inArray(transactionsTable.id, transactionIds));
+
+  res.json(CreateRuleDraftsFromTransactionsResponse.parse(buildRuleDraftsFromTransactions(transactions)));
+});
+
+router.post("/rules/from-transactions", async (req, res): Promise<void> => {
+  const body = CreateRulesFromTransactionsBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  if (body.data.rules.length === 0) {
+    res.status(400).json({ error: "At least one rule is required" });
+    return;
+  }
+
+  const allTransactions = await db
+    .select({
+      id: transactionsTable.id,
+      merchant: transactionsTable.merchant,
+      description: transactionsTable.description,
+      amount: transactionsTable.amount,
+      category: transactionsTable.category,
+    })
+    .from(transactionsTable);
+
+  const createdRules: Array<typeof categorizationRulesTable.$inferSelect> = [];
+  const updatesByCategory = new Map<string, Set<number>>();
+
+  for (const rule of body.data.rules) {
+    const pattern = rule.pattern.trim();
+    if (!pattern || !rule.category.trim()) {
+      res.status(400).json({ error: "Rule pattern and category are required" });
+      return;
+    }
+
+    const [created] = await db
+      .insert(categorizationRulesTable)
+      .values({
+        pattern,
+        category: rule.category,
+        priority: rule.priority ?? 30,
+      })
+      .returning();
+    createdRules.push(created);
+
+    const selectedIds = new Set(rule.transactionIds);
+    const targetIds = rule.applyToMatches
+      ? allTransactions
+          .filter((transaction) => matchesRulePattern(transaction, pattern))
+          .map((transaction) => transaction.id)
+      : allTransactions
+          .filter((transaction) => selectedIds.has(transaction.id))
+          .map((transaction) => transaction.id);
+
+    const ids = updatesByCategory.get(rule.category) ?? new Set<number>();
+    for (const id of targetIds) ids.add(id);
+    updatesByCategory.set(rule.category, ids);
+  }
+
+  const updatedIds = new Set<number>();
+  for (const [category, ids] of updatesByCategory.entries()) {
+    const idList = Array.from(ids);
+    if (idList.length === 0) continue;
+
+    const rows = await db
+      .update(transactionsTable)
+      .set({ category })
+      .where(inArray(transactionsTable.id, idList))
+      .returning({ id: transactionsTable.id });
+
+    for (const row of rows) updatedIds.add(row.id);
+  }
+
+  res.status(201).json(
+    CreateRulesFromTransactionsResponse.parse({
+      createdRules: createdRules.map(serializeRule),
+      updated: updatedIds.size,
+    }),
+  );
 });
 
 router.post("/rules/apply", async (_req, res): Promise<void> => {

@@ -136,6 +136,14 @@ paths:
           in: query
           schema:
             type: string
+        - name: merchant
+          in: query
+          schema:
+            type: string
+        - name: needsReview
+          in: query
+          schema:
+            type: boolean
         - name: type
           in: query
           schema:
@@ -403,6 +411,58 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/RuleSuggestion"
+
+  /rules/draft:
+    post:
+      operationId: createRuleDraftsFromTransactions
+      tags: [rules]
+      summary: Build rule drafts from selected transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleDraftRequest"
+      responses:
+        "200":
+          description: Rule drafts grouped by normalized merchant
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuleDraft"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rules/from-transactions:
+    post:
+      operationId: createRulesFromTransactions
+      tags: [rules]
+      summary: Create custom rules from selected transactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRulesFromTransactionsRequest"
+      responses:
+        "201":
+          description: Created rules and updated transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateRulesFromTransactionsResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /rules/apply:
     post:
@@ -843,6 +903,79 @@ components:
           items:
             $ref: "#/components/schemas/RuleSuggestionCurrentCategory"
       required: [id, merchant, pattern, category, transactionCount, totalAmount, confidence, reason, sampleDescriptions, currentCategories]
+
+    RuleDraftRequest:
+      type: object
+      properties:
+        transactionIds:
+          type: array
+          items:
+            type: integer
+      required: [transactionIds]
+
+    RuleDraft:
+      type: object
+      properties:
+        groupKey:
+          type: string
+        transactionIds:
+          type: array
+          items:
+            type: integer
+        transactionCount:
+          type: integer
+        normalizedMerchant:
+          type: string
+        pattern:
+          type: string
+        suggestedCategory:
+          type: string
+        currentCategories:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleSuggestionCurrentCategory"
+        sampleDescriptions:
+          type: array
+          items:
+            type: string
+      required: [groupKey, transactionIds, transactionCount, normalizedMerchant, pattern, suggestedCategory, currentCategories, sampleDescriptions]
+
+    CreateRuleFromTransactionsItem:
+      type: object
+      properties:
+        transactionIds:
+          type: array
+          items:
+            type: integer
+        pattern:
+          type: string
+        category:
+          type: string
+        applyToMatches:
+          type: boolean
+        priority:
+          type: integer
+      required: [transactionIds, pattern, category, applyToMatches]
+
+    CreateRulesFromTransactionsRequest:
+      type: object
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateRuleFromTransactionsItem"
+      required: [rules]
+
+    CreateRulesFromTransactionsResult:
+      type: object
+      properties:
+        createdRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/Rule"
+        updated:
+          type: integer
+      required: [createdRules, updated]
 
     RuleApplicationResult:
       type: object

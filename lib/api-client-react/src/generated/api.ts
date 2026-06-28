@@ -26,6 +26,8 @@ import type {
   Category,
   ConfirmUploadRequest,
   CreateRuleRequest,
+  CreateRulesFromTransactionsRequest,
+  CreateRulesFromTransactionsResult,
   DashboardData,
   DatabaseHealthStatus,
   DeleteDataResult,
@@ -40,6 +42,8 @@ import type {
   PreviewResult,
   Rule,
   RuleApplicationResult,
+  RuleDraft,
+  RuleDraftRequest,
   RuleSuggestion,
   Transaction,
   TransactionList,
@@ -1424,6 +1428,146 @@ export function useListRuleSuggestions<TData = Awaited<ReturnType<typeof listRul
 
 
 
+
+export const getCreateRuleDraftsFromTransactionsUrl = () => {
+
+
+
+
+  return `/api/rules/draft`
+}
+
+/**
+ * @summary Build rule drafts from selected transactions
+ */
+export const createRuleDraftsFromTransactions = async (ruleDraftRequest: RuleDraftRequest, options?: RequestInit): Promise<RuleDraft[]> => {
+
+  return customFetch<RuleDraft[]>(getCreateRuleDraftsFromTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(ruleDraftRequest)
+  }
+);}
+
+
+
+
+export const getCreateRuleDraftsFromTransactionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>, TError,{data: BodyType<RuleDraftRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>, TError,{data: BodyType<RuleDraftRequest>}, TContext> => {
+
+const mutationKey = ['createRuleDraftsFromTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>, {data: BodyType<RuleDraftRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createRuleDraftsFromTransactions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRuleDraftsFromTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>>
+    export type CreateRuleDraftsFromTransactionsMutationBody = BodyType<RuleDraftRequest>
+    export type CreateRuleDraftsFromTransactionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Build rule drafts from selected transactions
+ */
+export const useCreateRuleDraftsFromTransactions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>, TError,{data: BodyType<RuleDraftRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRuleDraftsFromTransactions>>,
+        TError,
+        {data: BodyType<RuleDraftRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateRuleDraftsFromTransactionsMutationOptions(options));
+    }
+
+export const getCreateRulesFromTransactionsUrl = () => {
+
+
+
+
+  return `/api/rules/from-transactions`
+}
+
+/**
+ * @summary Create custom rules from selected transactions
+ */
+export const createRulesFromTransactions = async (createRulesFromTransactionsRequest: CreateRulesFromTransactionsRequest, options?: RequestInit): Promise<CreateRulesFromTransactionsResult> => {
+
+  return customFetch<CreateRulesFromTransactionsResult>(getCreateRulesFromTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createRulesFromTransactionsRequest)
+  }
+);}
+
+
+
+
+export const getCreateRulesFromTransactionsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRulesFromTransactions>>, TError,{data: BodyType<CreateRulesFromTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRulesFromTransactions>>, TError,{data: BodyType<CreateRulesFromTransactionsRequest>}, TContext> => {
+
+const mutationKey = ['createRulesFromTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRulesFromTransactions>>, {data: BodyType<CreateRulesFromTransactionsRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createRulesFromTransactions(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRulesFromTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof createRulesFromTransactions>>>
+    export type CreateRulesFromTransactionsMutationBody = BodyType<CreateRulesFromTransactionsRequest>
+    export type CreateRulesFromTransactionsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create custom rules from selected transactions
+ */
+export const useCreateRulesFromTransactions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRulesFromTransactions>>, TError,{data: BodyType<CreateRulesFromTransactionsRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRulesFromTransactions>>,
+        TError,
+        {data: BodyType<CreateRulesFromTransactionsRequest>},
+        TContext
+      > => {
+      return useMutation(getCreateRulesFromTransactionsMutationOptions(options));
+    }
 
 export const getApplyRulesToExistingTransactionsUrl = () => {
 

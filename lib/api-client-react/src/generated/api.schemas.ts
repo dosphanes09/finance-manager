@@ -201,6 +201,38 @@ export interface RuleSuggestion {
   currentCategories: RuleSuggestionCurrentCategory[];
 }
 
+export interface RuleDraftRequest {
+  transactionIds: number[];
+}
+
+export interface RuleDraft {
+  groupKey: string;
+  transactionIds: number[];
+  transactionCount: number;
+  normalizedMerchant: string;
+  pattern: string;
+  suggestedCategory: string;
+  currentCategories: RuleSuggestionCurrentCategory[];
+  sampleDescriptions: string[];
+}
+
+export interface CreateRuleFromTransactionsItem {
+  transactionIds: number[];
+  pattern: string;
+  category: string;
+  applyToMatches: boolean;
+  priority?: number;
+}
+
+export interface CreateRulesFromTransactionsRequest {
+  rules: CreateRuleFromTransactionsItem[];
+}
+
+export interface CreateRulesFromTransactionsResult {
+  createdRules: Rule[];
+  updated: number;
+}
+
 export interface RuleApplicationResult {
   scanned: number;
   updated: number;
@@ -236,6 +268,8 @@ export interface DeleteDataResult {
 export type ListTransactionsParams = {
 month?: string;
 category?: string;
+merchant?: string;
+needsReview?: boolean;
 type?: string;
 search?: string;
 sortBy?: ListTransactionsSortBy;
