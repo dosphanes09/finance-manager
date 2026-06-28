@@ -389,6 +389,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/Rule"
 
+  /rules/suggestions:
+    get:
+      operationId: listRuleSuggestions
+      tags: [rules]
+      summary: Suggest custom categorization rules from existing transactions
+      responses:
+        "200":
+          description: Suggested rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuleSuggestion"
+
+  /rules/apply:
+    post:
+      operationId: applyRulesToExistingTransactions
+      tags: [rules]
+      summary: Re-categorize existing transactions using current rules
+      responses:
+        "200":
+          description: Number of transactions updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleApplicationResult"
+
   /rules/{id}:
     delete:
       operationId: deleteRule
@@ -777,6 +805,53 @@ components:
         priority:
           type: integer
       required: [pattern, category]
+
+    RuleSuggestionCurrentCategory:
+      type: object
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+      required: [category, count]
+
+    RuleSuggestion:
+      type: object
+      properties:
+        id:
+          type: string
+        merchant:
+          type: string
+        pattern:
+          type: string
+        category:
+          type: string
+        transactionCount:
+          type: integer
+        totalAmount:
+          type: number
+        confidence:
+          type: number
+        reason:
+          type: string
+        sampleDescriptions:
+          type: array
+          items:
+            type: string
+        currentCategories:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleSuggestionCurrentCategory"
+      required: [id, merchant, pattern, category, transactionCount, totalAmount, confidence, reason, sampleDescriptions, currentCategories]
+
+    RuleApplicationResult:
+      type: object
+      properties:
+        scanned:
+          type: integer
+        updated:
+          type: integer
+      required: [scanned, updated]
 
     MonthComparison:
       type: object

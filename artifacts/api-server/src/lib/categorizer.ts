@@ -88,26 +88,54 @@ export interface CustomRule {
   category: string;
 }
 
-export function categorize(
+export function normalizeCategorizationText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0131/g, "i")
+    .replace(/\u011f/g, "g")
+    .replace(/\u015f/g, "s")
+    .replace(/\u00e7/g, "c")
+    .replace(/\u00f6/g, "o")
+    .replace(/\u00fc/g, "u");
+}
+
+export function matchCustomRule(
   merchant: string,
   description: string,
-  customRules: CustomRule[] = []
-): string {
-  const haystack = `${merchant} ${description}`.toLowerCase();
+  customRules: CustomRule[] = [],
+): CustomRule | null {
+  const haystack = normalizeCategorizationText(`${merchant} ${description}`);
 
   for (const rule of customRules) {
-    if (haystack.includes(rule.pattern.toLowerCase())) {
-      return rule.category;
+    if (haystack.includes(normalizeCategorizationText(rule.pattern))) {
+      return rule;
     }
   }
 
+  return null;
+}
+
+export function categorizeBuiltIn(merchant: string, description: string): string {
+  const haystack = normalizeCategorizationText(`${merchant} ${description}`);
+
   for (const [category, keywords] of Object.entries(CATEGORY_RULES)) {
-    if (keywords.some((kw) => haystack.includes(kw))) {
+    if (keywords.some((kw) => haystack.includes(normalizeCategorizationText(kw)))) {
       return category;
     }
   }
 
   return "other";
+}
+
+export function categorize(
+  merchant: string,
+  description: string,
+  customRules: CustomRule[] = []
+): string {
+  const customRule = matchCustomRule(merchant, description, customRules);
+  return customRule?.category ?? categorizeBuiltIn(merchant, description);
 }
 
 export const CATEGORIES = [

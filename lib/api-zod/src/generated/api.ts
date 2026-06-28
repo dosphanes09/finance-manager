@@ -364,6 +364,36 @@ export const CreateRuleResponse = zod.object({
 
 
 /**
+ * @summary Suggest custom categorization rules from existing transactions
+ */
+export const ListRuleSuggestionsResponseItem = zod.object({
+  "id": zod.string(),
+  "merchant": zod.string(),
+  "pattern": zod.string(),
+  "category": zod.string(),
+  "transactionCount": zod.number(),
+  "totalAmount": zod.number(),
+  "confidence": zod.number(),
+  "reason": zod.string(),
+  "sampleDescriptions": zod.array(zod.string()),
+  "currentCategories": zod.array(zod.object({
+  "category": zod.string(),
+  "count": zod.number()
+}))
+})
+export const ListRuleSuggestionsResponse = zod.array(ListRuleSuggestionsResponseItem)
+
+
+/**
+ * @summary Re-categorize existing transactions using current rules
+ */
+export const ApplyRulesToExistingTransactionsResponse = zod.object({
+  "scanned": zod.number(),
+  "updated": zod.number()
+})
+
+
+/**
  * @summary Delete a categorization rule
  */
 export const DeleteRuleParams = zod.object({

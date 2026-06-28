@@ -1,12 +1,18 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, categorizationRulesTable } from "@workspace/db";
+import { eq, desc, inArray } from "drizzle-orm";
+import { db, categorizationRulesTable, transactionsTable } from "@workspace/db";
 import {
   ListRulesResponse,
   CreateRuleBody,
   CreateRuleResponse,
   DeleteRuleParams,
+  ListRuleSuggestionsResponse,
+  ApplyRulesToExistingTransactionsResponse,
 } from "@workspace/api-zod";
+import {
+  buildRuleSuggestions,
+  categorizeTransactionsWithRules,
+} from "../lib/rule-suggestions";
 
 const router: IRouter = Router();
 
@@ -24,6 +30,76 @@ router.get("/rules", async (_req, res): Promise<void> => {
     .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt));
 
   res.json(ListRulesResponse.parse(rows.map(serializeRule)));
+});
+
+router.get("/rules/suggestions", async (_req, res): Promise<void> => {
+  const [transactions, rules] = await Promise.all([
+    db
+      .select({
+        id: transactionsTable.id,
+        merchant: transactionsTable.merchant,
+        description: transactionsTable.description,
+        amount: transactionsTable.amount,
+        category: transactionsTable.category,
+      })
+      .from(transactionsTable),
+    db
+      .select({
+        pattern: categorizationRulesTable.pattern,
+        category: categorizationRulesTable.category,
+      })
+      .from(categorizationRulesTable)
+      .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
+  ]);
+
+  res.json(ListRuleSuggestionsResponse.parse(buildRuleSuggestions(transactions, rules)));
+});
+
+router.post("/rules/apply", async (_req, res): Promise<void> => {
+  const [transactions, rules] = await Promise.all([
+    db
+      .select({
+        id: transactionsTable.id,
+        merchant: transactionsTable.merchant,
+        description: transactionsTable.description,
+        amount: transactionsTable.amount,
+        category: transactionsTable.category,
+      })
+      .from(transactionsTable),
+    db
+      .select({
+        pattern: categorizationRulesTable.pattern,
+        category: categorizationRulesTable.category,
+      })
+      .from(categorizationRulesTable)
+      .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt)),
+  ]);
+
+  const updates = categorizeTransactionsWithRules(transactions, rules);
+  const updatesByCategory = new Map<string, number[]>();
+
+  for (const update of updates) {
+    const ids = updatesByCategory.get(update.category) ?? [];
+    ids.push(update.id);
+    updatesByCategory.set(update.category, ids);
+  }
+
+  let updated = 0;
+  for (const [category, ids] of updatesByCategory.entries()) {
+    const rows = await db
+      .update(transactionsTable)
+      .set({ category })
+      .where(inArray(transactionsTable.id, ids))
+      .returning({ id: transactionsTable.id });
+    updated += rows.length;
+  }
+
+  res.json(
+    ApplyRulesToExistingTransactionsResponse.parse({
+      scanned: transactions.length,
+      updated,
+    }),
+  );
 });
 
 router.post("/rules", async (req, res): Promise<void> => {

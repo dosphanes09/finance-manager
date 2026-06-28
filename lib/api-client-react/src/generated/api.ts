@@ -39,6 +39,8 @@ import type {
   ListTransactionsParams,
   PreviewResult,
   Rule,
+  RuleApplicationResult,
+  RuleSuggestion,
   Transaction,
   TransactionList,
   TransactionUpdate,
@@ -1344,6 +1346,153 @@ export const useCreateRule = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateRuleMutationOptions(options));
+    }
+
+export const getListRuleSuggestionsUrl = () => {
+
+
+
+
+  return `/api/rules/suggestions`
+}
+
+/**
+ * @summary Suggest custom categorization rules from existing transactions
+ */
+export const listRuleSuggestions = async ( options?: RequestInit): Promise<RuleSuggestion[]> => {
+
+  return customFetch<RuleSuggestion[]>(getListRuleSuggestionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRuleSuggestionsQueryKey = () => {
+    return [
+    `/api/rules/suggestions`
+    ] as const;
+    }
+
+
+export const getListRuleSuggestionsQueryOptions = <TData = Awaited<ReturnType<typeof listRuleSuggestions>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRuleSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRuleSuggestionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRuleSuggestions>>> = ({ signal }) => listRuleSuggestions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRuleSuggestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRuleSuggestionsQueryResult = NonNullable<Awaited<ReturnType<typeof listRuleSuggestions>>>
+export type ListRuleSuggestionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Suggest custom categorization rules from existing transactions
+ */
+
+export function useListRuleSuggestions<TData = Awaited<ReturnType<typeof listRuleSuggestions>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRuleSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRuleSuggestionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApplyRulesToExistingTransactionsUrl = () => {
+
+
+
+
+  return `/api/rules/apply`
+}
+
+/**
+ * @summary Re-categorize existing transactions using current rules
+ */
+export const applyRulesToExistingTransactions = async ( options?: RequestInit): Promise<RuleApplicationResult> => {
+
+  return customFetch<RuleApplicationResult>(getApplyRulesToExistingTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getApplyRulesToExistingTransactionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyRulesToExistingTransactions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyRulesToExistingTransactions>>, TError,void, TContext> => {
+
+const mutationKey = ['applyRulesToExistingTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyRulesToExistingTransactions>>, void> = () => {
+
+
+          return  applyRulesToExistingTransactions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyRulesToExistingTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof applyRulesToExistingTransactions>>>
+
+    export type ApplyRulesToExistingTransactionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-categorize existing transactions using current rules
+ */
+export const useApplyRulesToExistingTransactions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyRulesToExistingTransactions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyRulesToExistingTransactions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getApplyRulesToExistingTransactionsMutationOptions(options));
     }
 
 export const getDeleteRuleUrl = (id: number,) => {

@@ -183,6 +183,29 @@ export interface CreateRuleRequest {
   priority?: number;
 }
 
+export interface RuleSuggestionCurrentCategory {
+  category: string;
+  count: number;
+}
+
+export interface RuleSuggestion {
+  id: string;
+  merchant: string;
+  pattern: string;
+  category: string;
+  transactionCount: number;
+  totalAmount: number;
+  confidence: number;
+  reason: string;
+  sampleDescriptions: string[];
+  currentCategories: RuleSuggestionCurrentCategory[];
+}
+
+export interface RuleApplicationResult {
+  scanned: number;
+  updated: number;
+}
+
 export interface MonthComparison {
   category: string;
   current: number;
