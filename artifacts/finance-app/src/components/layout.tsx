@@ -53,7 +53,7 @@ function SidebarBrand() {
       <div className="bg-primary text-primary-foreground p-1.5 rounded-md">
         <PieChart className="w-5 h-5" />
       </div>
-      <span className="font-bold text-lg tracking-tight">FinTrack</span>
+      <span className="font-bold text-lg tracking-tight">FinanceAnalyzerPro</span>
     </div>
   );
 }
@@ -68,7 +68,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <SidebarBrand />
         <NavLinks />
         <div className="p-4 text-xs text-sidebar-foreground/30 font-mono border-t border-sidebar-border/30">
-          FinTrack v2.0.0
+          FinanceAnalyzerPro v2.0.0
         </div>
       </aside>
 
@@ -90,7 +90,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             <div className="bg-primary text-primary-foreground p-1 rounded-md">
               <PieChart className="w-4 h-4" />
             </div>
-            <span className="font-bold tracking-tight">FinTrack</span>
+            <span className="font-bold tracking-tight">FinanceAnalyzerPro</span>
           </div>
         </header>
 

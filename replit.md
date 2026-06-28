@@ -1,4 +1,4 @@
-# FinTrack — Personal Finance Tracker
+# FinanceAnalyzerPro — Personal Finance Tracker
 
 A full-stack personal finance app. Users upload bank statements (CSV, Excel, PDF), transactions are parsed and auto-categorized, and displayed in a dashboard with charts and a filterable transaction table.
 

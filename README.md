@@ -1,4 +1,4 @@
-# FinTrack — Personal Finance Tracker
+# FinanceAnalyzerPro — Personal Finance Tracker
 
 A full-stack personal finance analytics platform. Upload CSV, Excel, or PDF bank statements; transactions are parsed, masked, and auto-categorised; then browse them in a filterable table, set monthly budgets, and explore rule-based spending insights — all in a clean React dashboard.
 
@@ -66,13 +66,13 @@ brew install postgresql@16 && brew services start postgresql@16
 
 ```
 # Local PostgreSQL, default OS user
-DATABASE_URL=postgresql://localhost:5432/fintrack
+DATABASE_URL=postgresql://localhost:5432/finance_analyzer_pro
 
 # With explicit credentials
-DATABASE_URL=postgresql://myuser:mypassword@localhost:5432/fintrack
+DATABASE_URL=postgresql://myuser:mypassword@localhost:5432/finance_analyzer_pro
 
 # Supabase / Neon / Railway (paste from their dashboard)
-DATABASE_URL=postgresql://user:pass@db.example.com:5432/fintrack?sslmode=require
+DATABASE_URL=postgresql://user:pass@db.example.com:5432/finance_analyzer_pro?sslmode=require
 ```
 
 ### Generate a SESSION_SECRET
@@ -88,11 +88,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ### 1. Open the local workspace and install
 
 ```powershell
-cd C:\Projects\FinTrack
+cd C:\Projects\FinanceAnalyzerPro
 pnpm install
 ```
 
-This prepared local workspace lives at `C:\Projects\FinanceAnalyzerPro`. `C:\Projects\FinTrack` is a directory junction to that same folder, so either path works without duplicating files.
+This prepared local workspace lives at `C:\Projects\FinanceAnalyzerPro`.
 
 ### 2. Configure environment
 
@@ -110,14 +110,14 @@ The `artifacts/finance-app/.env` file ships with correct local defaults (`PORT=5
 
 ```bash
 # Create the database (adjust username if needed)
-createdb fintrack
-# or: psql -U postgres -c "CREATE DATABASE fintrack;"
+createdb finance_analyzer_pro
+# or: psql -U postgres -c "CREATE DATABASE finance_analyzer_pro;"
 ```
 
 On Windows, if `createdb` is not in PATH, open the SQL Shell (`psql`) or pgAdmin and run:
 
 ```sql
-CREATE DATABASE fintrack;
+CREATE DATABASE finance_analyzer_pro;
 ```
 
 ### 4. Push the schema
@@ -130,7 +130,7 @@ This creates three tables: `transactions`, `budgets`, `categorization_rules`.
 
 ### 5. Start the development servers
 
-Open **two terminal tabs** in `C:\Projects\FinTrack`:
+Open **two terminal tabs** in `C:\Projects\FinanceAnalyzerPro`:
 
 **Terminal 1 — API** (http://localhost:8080):
 ```bash

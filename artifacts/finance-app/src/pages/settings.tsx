@@ -65,7 +65,7 @@ export default function Settings() {
             <Shield className="w-4 h-4 text-primary" />
             Privacy & Data Storage
           </CardTitle>
-          <CardDescription>How FinTrack handles your financial data.</CardDescription>
+          <CardDescription>How FinanceAnalyzerPro handles your financial data.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {[
