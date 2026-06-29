@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import cors, { type CorsOptions } from "cors";
 import pinoHttp from "pino-http";
@@ -105,6 +108,40 @@ function isJsonSyntaxError(err: unknown): boolean {
 }
 
 app.use("/api", router);
+configureFrontendStatic(app);
 app.use(errorHandler);
 
 export default app;
+
+function configureFrontendStatic(server: Express): void {
+  const frontendDistDir = resolveFrontendDistDir();
+  const frontendIndexPath = path.join(frontendDistDir, "index.html");
+
+  if (!fs.existsSync(frontendIndexPath)) {
+    logger.info({ frontendDistDir }, "Frontend build not found; API-only mode enabled");
+    return;
+  }
+
+  logger.info({ frontendDistDir }, "Serving frontend build");
+  server.use(express.static(frontendDistDir, { index: false }));
+  server.use((req, res, next) => {
+    if (req.path.startsWith("/api")) {
+      next();
+      return;
+    }
+
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      next();
+      return;
+    }
+
+    res.sendFile(frontendIndexPath);
+  });
+}
+
+function resolveFrontendDistDir(): string {
+  if (process.env.FRONTEND_DIST_DIR) return path.resolve(process.env.FRONTEND_DIST_DIR);
+
+  const apiArtifactDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  return path.resolve(apiArtifactDir, "..", "finance-app", "dist", "public");
+}
