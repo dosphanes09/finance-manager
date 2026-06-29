@@ -206,6 +206,39 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 
 ---
 
+## Android PWA Installation
+
+FinanceAnalyzerPro is configured as an installable PWA without changing the desktop web app. The normal local URL, `http://localhost:5173`, still works in a browser as before.
+
+### Local Android testing
+
+1. Start the API and frontend from `C:\Projects\FinanceAnalyzerPro`:
+   ```bash
+   pnpm --filter @workspace/api-server run dev
+   pnpm --filter @workspace/finance-app run dev
+   ```
+2. Open Chrome on Android and visit the frontend URL.
+   - For a physical Android device connected by USB, use ADB port forwarding:
+     ```bash
+     adb reverse tcp:5173 tcp:5173
+     adb reverse tcp:8080 tcp:8080
+     ```
+     Then open `http://localhost:5173` on the phone.
+   - For LAN testing, the phone must be able to reach both the Vite frontend and API proxy. Chrome requires HTTPS for install prompts except on localhost.
+3. In Chrome, open the menu and choose **Install app** or **Add to Home screen**.
+4. Launch FinanceAnalyzerPro from the Android home screen. The PWA uses the existing FinanceAnalyzerPro icon and opens in fullscreen display mode with standalone fallback.
+
+### PWA files
+
+- Manifest: `artifacts/finance-app/public/manifest.webmanifest`
+- Service worker: `artifacts/finance-app/public/sw.js`
+- Generated icons from the existing app icon: `artifacts/finance-app/public/icons/`
+- Android launcher/PWA icons: `192x192`, `512x512`, and maskable variants
+- Apple touch icon: `180x180`
+- Favicons: `16x16` and `32x32`
+
+---
+
 ## Project Structure
 
 ```
@@ -237,6 +270,10 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 │   │
 │   └── finance-app/                ← React + Vite frontend (port 5173)
 │       ├── .env                    ← local dev defaults (PORT, BASE_PATH)
+│       ├── public/
+│       │   ├── manifest.webmanifest ← PWA manifest
+│       │   ├── sw.js               ← service worker
+│       │   └── icons/              ← generated app icons
 │       └── src/
 │           ├── components/
 │           │   ├── layout.tsx      ← sidebar + mobile drawer
