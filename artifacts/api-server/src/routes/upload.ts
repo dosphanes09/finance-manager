@@ -35,13 +35,6 @@ import {
   validateUploadMetadata,
   type SupportedUploadExtension,
 } from "../lib/upload-security";
-import {
-  formatUploadDbDevError,
-  getUploadDbErrorDiagnostic,
-  getUploadDbErrorLogFields,
-  isDatabaseConnectionError,
-  isDevelopmentEnvironment,
-} from "../lib/upload-db-errors";
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
@@ -126,19 +119,20 @@ function parseErrorPayload(err: unknown, fallback: string) {
     };
   }
 
-  if (isDatabaseQueryError(err)) {
-    return {
-      error: fallback,
-      details: isDevelopmentEnvironment()
-        ? {
-            reason: "Database query failed while processing the upload.",
-            database: getUploadDbErrorDiagnostic(err),
-          }
-        : undefined,
-    };
-  }
-
   return { error: fallback };
+}
+
+function isDatabaseConnectionError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error && "cause" in err ? String(err.cause) : "";
+  const text = `${message} ${cause}`;
+
+  return (
+    text.includes("ECONNREFUSED") ||
+    text.includes("Connection terminated") ||
+    text.includes("DATABASE_URL") ||
+    text.includes("Failed query")
+  );
 }
 
 function logParseFailure(
@@ -157,12 +151,6 @@ function logParseFailure(
   }
 
   req.log.error({ error: sanitizeErrorForLog(err) }, message);
-}
-
-function isDatabaseQueryError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const diagnostic = getUploadDbErrorDiagnostic(err);
-  return Boolean(diagnostic.code) || err.message.includes("Failed query");
 }
 
 async function detectDuplicates(
@@ -184,17 +172,12 @@ async function detectDuplicates(
 
     return { existingKeys, errors: [] };
   } catch (err) {
-    log?.warn(getUploadDbErrorLogFields(err), "Duplicate detection query failed during upload preview");
-    const errors = [
-      "Duplicate detection was skipped because the database query failed. Parsed transactions are shown as new.",
-    ];
-    if (isDevelopmentEnvironment()) {
-      errors.push(formatUploadDbDevError("Duplicate detection database diagnostic:", err));
-    }
-
+    log?.warn({ error: sanitizeErrorForLog(err) }, "Duplicate detection skipped because the database is unavailable");
     return {
       existingKeys: new Set<string>(),
-      errors,
+      errors: [
+        "Duplicate detection was skipped because the database is unavailable. Parsed transactions are shown as new.",
+      ],
     };
   }
 }
@@ -209,33 +192,8 @@ async function loadCustomRules(log?: Request["log"]): Promise<CustomRule[]> {
       .from(categorizationRulesTable)
       .orderBy(desc(categorizationRulesTable.priority), desc(categorizationRulesTable.createdAt));
   } catch (err) {
-    log?.warn(getUploadDbErrorLogFields(err), "Custom categorization rules query failed; falling back to built-in categorization");
+    log?.warn({ error: sanitizeErrorForLog(err) }, "Custom categorization rules unavailable; falling back to built-in categorization");
     return [];
-  }
-}
-
-async function loadMerchantMemoryForUpload(
-  parsed: ParsedTransaction[],
-  log?: Request["log"],
-) {
-  try {
-    return {
-      merchantMemory: await loadMerchantMemory(parsed),
-      errors: [] as string[],
-    };
-  } catch (err) {
-    log?.warn(getUploadDbErrorLogFields(err), "Merchant memory query failed during upload preview");
-    const errors = [
-      "Merchant memory was unavailable; continuing with deterministic categorization rules.",
-    ];
-    if (isDevelopmentEnvironment()) {
-      errors.push(formatUploadDbDevError("Merchant memory database diagnostic:", err));
-    }
-
-    return {
-      merchantMemory: new Map(),
-      errors,
-    };
   }
 }
 
@@ -259,11 +217,10 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
       return;
     }
 
-    const [customRules, merchantMemoryResult] = await Promise.all([
+    const [customRules, merchantMemory] = await Promise.all([
       loadCustomRules(req.log),
-      loadMerchantMemoryForUpload(parsed, req.log),
+      loadMerchantMemory(parsed),
     ]);
-    const merchantMemory = merchantMemoryResult.merchantMemory;
 
     const previewWithoutDuplicateFlags = await Promise.all(parsed.map(async (t) => {
       const merchant = sanitizeStoredText(t.merchant);
@@ -302,11 +259,7 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
     const duplicateCount = preview.filter((p) => p.isDuplicate).length;
 
     res.json(
-      PreviewStatementResponse.parse({
-        transactions: preview,
-        duplicateCount,
-        errors: [...merchantMemoryResult.errors, ...duplicateDetection.errors],
-      })
+      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors: duplicateDetection.errors })
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement for preview");
@@ -386,11 +339,10 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
       return;
     }
 
-    const [customRules, merchantMemoryResult] = await Promise.all([
+    const [customRules, merchantMemory] = await Promise.all([
       loadCustomRules(req.log),
-      loadMerchantMemoryForUpload(parsed, req.log),
+      loadMerchantMemory(parsed),
     ]);
-    const merchantMemory = merchantMemoryResult.merchantMemory;
 
     const categorized = await Promise.all(parsed.map(async (t) => {
       const merchant = sanitizeStoredText(t.merchant);
@@ -496,10 +448,6 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 }
 
 function sanitizeErrorForLog(err: unknown) {
-  if (isDatabaseConnectionError(err) || isDatabaseQueryError(err)) {
-    return getUploadDbErrorDiagnostic(err);
-  }
-
   if (!(err instanceof Error)) return { message: String(err) };
 
   return {

@@ -62,7 +62,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex h-screen min-h-dvh bg-background overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-60 border-r bg-sidebar text-sidebar-foreground flex-col shrink-0">
         <SidebarBrand />
@@ -74,7 +74,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile header + sheet */}
       <div className="flex flex-col flex-1 min-w-0">
-        <header className="md:hidden flex items-center gap-3 px-3 sm:px-4 py-3 border-b bg-sidebar text-sidebar-foreground shrink-0">
+        <header className="md:hidden flex items-center gap-3 px-4 py-3 border-b bg-sidebar text-sidebar-foreground shrink-0">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="text-sidebar-foreground hover:bg-sidebar-accent/50">
@@ -86,15 +86,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <NavLinks onNavigate={() => setMobileOpen(false)} />
             </SheetContent>
           </Sheet>
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2">
             <div className="bg-primary text-primary-foreground p-1 rounded-md">
               <PieChart className="w-4 h-4" />
             </div>
-            <span className="font-bold tracking-tight truncate">FinanceAnalyzerPro</span>
+            <span className="font-bold tracking-tight">FinanceAnalyzerPro</span>
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto overscroll-contain bg-muted/20">
+        <main className="flex-1 overflow-auto bg-muted/20">
           {children}
         </main>
       </div>
