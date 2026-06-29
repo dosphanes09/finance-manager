@@ -206,6 +206,98 @@ Open the command palette → **Tasks: Run Task** → **Start All (API + Frontend
 
 ---
 
+## Everyday Local App Mode (Windows)
+
+After the first setup is complete, you do not need to manually start PostgreSQL, the backend, and the Vite frontend for normal use.
+
+In this mode:
+
+- PostgreSQL starts in the background from the local `.local/postgres-data` cluster.
+- The API starts on `http://127.0.0.1:8080`.
+- The API serves the built frontend from `artifacts/finance-app/dist/public`.
+- The desktop shortcut opens the app directly from `http://127.0.0.1:8080/`.
+- Port `5173` is only needed for frontend development, not everyday use.
+
+### One-time build
+
+Run this after pulling code changes or changing frontend/backend source:
+
+```cmd
+cd C:\Projects\FinanceAnalyzerPro
+pnpm run build
+```
+
+### Install automatic startup
+
+Run these once:
+
+```cmd
+cd C:\Projects\FinanceAnalyzerPro
+scripts\local-prod\install-postgres-autostart.cmd
+scripts\local-prod\install-api-autostart.cmd
+scripts\local-prod\install-desktop-shortcut.cmd
+```
+
+If Windows does not allow Scheduled Tasks for this user, the scripts create hidden Startup launchers instead:
+
+```text
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\FinanceAnalyzerPro-Postgres.vbs
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\FinanceAnalyzerPro-Api.vbs
+```
+
+On this configured machine, the desktop shortcut is created at:
+
+```text
+C:\Users\yagiz\OneDrive\Desktop\FinanceAnalyzerPro.lnk
+```
+
+### Open the app
+
+Use the desktop shortcut, or run:
+
+```cmd
+cd C:\Projects\FinanceAnalyzerPro
+scripts\local-prod\open-app.cmd
+```
+
+If the app is not running, `open-app.cmd` starts PostgreSQL and the API in the background, waits until `8080` is ready, and then opens the browser.
+
+### Manage the local app
+
+```cmd
+cd C:\Projects\FinanceAnalyzerPro
+scripts\local-prod\status-app.cmd
+scripts\local-prod\restart-app.cmd
+scripts\local-prod\stop-app.cmd
+```
+
+Use this if you want to stop only the API and leave PostgreSQL running:
+
+```cmd
+scripts\local-prod\stop-app.cmd -KeepPostgres
+```
+
+### Logs and local data
+
+Runtime logs are written outside the repository:
+
+```text
+%LOCALAPPDATA%\FinanceAnalyzerPro\logs\api.log
+%LOCALAPPDATA%\FinanceAnalyzerPro\logs\postgres.log
+```
+
+Local PostgreSQL data stays in the ignored project folder:
+
+```text
+C:\Projects\FinanceAnalyzerPro\.local\postgres-data
+```
+
+Do not commit `.env`, `.local`, uploaded statements, or real financial data.
+
+For development work, keep using the two-terminal Vite/API workflow from **Local Setup**.
+
+---
+
 ## Project Structure
 
 ```
@@ -340,6 +432,11 @@ pnpm run typecheck
 | `pnpm run typecheck:libs` | Typecheck shared libs only (faster during development) |
 | `pnpm --filter @workspace/api-server run build` | Production build of API |
 | `pnpm --filter @workspace/finance-app run build` | Production build of frontend (outputs to `dist/public/`) |
+| `scripts\local-prod\open-app.cmd` | Open the local one-port app, starting background services if needed |
+| `scripts\local-prod\status-app.cmd` | Show local API/PostgreSQL status and log locations |
+| `scripts\local-prod\restart-app.cmd` | Restart the local API and project PostgreSQL |
+| `scripts\local-prod\stop-app.cmd` | Stop the local API and project PostgreSQL |
+| `scripts\local-prod\install-desktop-shortcut.cmd` | Create the Windows desktop shortcut |
 
 ---
 
