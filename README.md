@@ -218,6 +218,26 @@ In this mode:
 - The desktop shortcut opens the app directly from `http://127.0.0.1:8080/`.
 - Port `5173` is only needed for frontend development, not everyday use.
 
+### Recommended one-command setup
+
+Run this after the root `.env` is configured:
+
+```cmd
+cd C:\Projects\FinanceAnalyzerPro
+scripts\local-prod\setup-local-app.cmd
+```
+
+This installs workspace dependencies, starts PostgreSQL, applies the local Drizzle schema, builds the API and frontend, installs background startup launchers, creates the desktop shortcut, and verifies that the app responds on `8080`.
+
+Useful setup options:
+
+```cmd
+scripts\local-prod\setup-local-app.cmd -SkipInstall
+scripts\local-prod\setup-local-app.cmd -SkipDbPush
+scripts\local-prod\setup-local-app.cmd -SkipBuild
+scripts\local-prod\setup-local-app.cmd -NoBrowser
+```
+
 ### One-time build
 
 Run this after pulling code changes or changing frontend/backend source:
@@ -432,6 +452,7 @@ pnpm run typecheck
 | `pnpm run typecheck:libs` | Typecheck shared libs only (faster during development) |
 | `pnpm --filter @workspace/api-server run build` | Production build of API |
 | `pnpm --filter @workspace/finance-app run build` | Production build of frontend (outputs to `dist/public/`) |
+| `scripts\local-prod\setup-local-app.cmd` | One-command local app setup: install, DB schema, build, autostart, shortcut, health check |
 | `scripts\local-prod\open-app.cmd` | Open the local one-port app, starting background services if needed |
 | `scripts\local-prod\status-app.cmd` | Show local API/PostgreSQL status and log locations |
 | `scripts\local-prod\restart-app.cmd` | Restart the local API and project PostgreSQL |
