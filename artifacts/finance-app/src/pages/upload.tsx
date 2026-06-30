@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2, AlertTriangle, X, Files } from "lucide-react";
 import { useListCategories } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 
@@ -19,7 +19,7 @@ interface PreviewTx {
   amount: number;
   type: string;
   currency: string;
-  transactionType: string;
+  transactionType: "debit" | "credit";
   transactionKind: string;
   balance: number | null;
   category: string;
@@ -31,7 +31,28 @@ interface PreviewTx {
   categorizationExplanation: string;
   month: string;
   isDuplicate: boolean;
+  sourceFile?: string;
+  sourceFileIndex?: number;
 }
+
+interface PreviewFileSummary {
+  name: string;
+  status: "parsed" | "failed";
+  transactionCount: number;
+  duplicateCount: number;
+  bank: string | null;
+  parser: string | null;
+  errors: string[];
+}
+
+interface BatchPreviewResponse {
+  transactions: PreviewTx[];
+  duplicateCount: number;
+  errors: string[];
+  files: PreviewFileSummary[];
+}
+
+const MAX_SELECTED_FILES = 20;
 
 function formatConfidence(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
@@ -83,10 +104,16 @@ function confidenceClass(value: number) {
   return "text-rose-600 border-rose-300 bg-rose-500/10";
 }
 
+function stripPreviewOnlyFields(transaction: PreviewTx): Omit<PreviewTx, "sourceFile" | "sourceFileIndex"> {
+  const { sourceFile: _sourceFile, sourceFileIndex: _sourceFileIndex, ...payload } = transaction;
+  return payload;
+}
+
 export default function Upload() {
   const [step, setStep] = useState<Step>("select");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<PreviewTx[]>([]);
+  const [fileSummaries, setFileSummaries] = useState<PreviewFileSummary[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -100,38 +127,58 @@ export default function Upload() {
 
   const reset = () => {
     setStep("select");
-    setFile(null);
+    setFiles([]);
     setPreview([]);
+    setFileSummaries([]);
     setDuplicateCount(0);
     setErrors([]);
     setError(null);
     setResult(null);
     setIncludeDuplicates(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleFileSelect = (f: File) => {
-    setFile(f);
+  const handleFilesSelect = (selectedFiles: FileList | File[]) => {
+    const nextFiles = Array.from(selectedFiles);
+    if (nextFiles.length === 0) return;
+
+    if (nextFiles.length > MAX_SELECTED_FILES) {
+      setError(`Tek seferde en fazla ${MAX_SELECTED_FILES} dosya yükleyebilirsiniz.`);
+      return;
+    }
+
+    setFiles(nextFiles);
     setError(null);
-    doPreview(f);
+    void doPreview(nextFiles);
   };
 
-  const doPreview = async (f: File) => {
+  const doPreview = async (selectedFiles: File[]) => {
     setStep("previewing");
+    setPreview([]);
+    setFileSummaries([]);
+    setErrors([]);
+
     const formData = new FormData();
-    formData.append("file", f);
+    selectedFiles.forEach((selectedFile) => formData.append("files", selectedFile));
+
     try {
-      const res = await fetch("/api/upload/preview", { method: "POST", body: formData });
+      const res = await fetch("/api/upload/preview-batch", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Dosya ayrıştırılamadı");
+        setFileSummaries(data.files ?? []);
+        setErrors(data.errors ?? []);
+        throw new Error(data.error || "Dosyalar ayrıştırılamadı");
       }
-      const data = await res.json();
-      setPreview(data.transactions);
-      setDuplicateCount(data.duplicateCount);
-      setErrors(data.errors ?? []);
+
+      const batch = data as BatchPreviewResponse;
+      setPreview(batch.transactions ?? []);
+      setDuplicateCount(batch.duplicateCount ?? 0);
+      setErrors(batch.errors ?? []);
+      setFileSummaries(batch.files ?? []);
       setStep("preview");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Dosya ayrıştırılamadı";
+      const msg = err instanceof Error ? err.message : "Dosyalar ayrıştırılamadı";
       setError(msg);
       setStep("select");
     }
@@ -139,9 +186,11 @@ export default function Upload() {
 
   const handleConfirm = async () => {
     setStep("importing");
-    const toSend = includeDuplicates
+    const prepared = includeDuplicates
       ? preview.map((t) => ({ ...t, isDuplicate: false }))
       : preview;
+    const toSend = prepared.map(stripPreviewOnlyFields);
+
     try {
       const res = await fetch("/api/upload/confirm", {
         method: "POST",
@@ -166,29 +215,36 @@ export default function Upload() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFileSelect(f);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) handleFilesSelect(droppedFiles);
   }, []);
 
   const nonDuplicates = preview.filter((t) => !t.isDuplicate);
-  const duplicates = preview.filter((t) => t.isDuplicate);
   const toImport = includeDuplicates ? preview : nonDuplicates;
   const averageConfidence = preview.length
     ? preview.reduce((sum, transaction) => sum + (transaction.categorizationConfidence ?? 0), 0) / preview.length
     : 0;
+  const parsedFileCount = fileSummaries.filter((file) => file.status === "parsed").length;
+  const failedFileCount = fileSummaries.filter((file) => file.status === "failed").length;
+  const showFileColumn = fileSummaries.length > 1;
+  const selectedFileLabel = files.length === 1 ? files[0]?.name : `${files.length} dosya seçildi`;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Ekstre Yükle</h1>
-        <p className="text-muted-foreground mt-0.5 text-sm">Banka ekstrelerini içe aktarın; kaydetmeden önce gözden geçirin.</p>
+        <p className="text-muted-foreground mt-0.5 text-sm">
+          Bir veya birden fazla banka ekstresini içe aktarın; kaydetmeden önce topluca gözden geçirin.
+        </p>
       </div>
 
       {(step === "select" || step === "previewing") && (
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle>Dosya seçin</CardTitle>
-            <CardDescription>CSV, Excel (.xlsx, .xls) veya PDF banka ekstresi.</CardDescription>
+            <CardTitle>Dosyaları seçin</CardTitle>
+            <CardDescription>
+              CSV, Excel (.xlsx, .xls) veya PDF banka ekstresi. Tek seferde en fazla {MAX_SELECTED_FILES} dosya.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div
@@ -203,8 +259,10 @@ export default function Upload() {
               {step === "previewing" ? (
                 <div className="flex flex-col items-center space-y-4 text-center">
                   <Loader2 className="w-12 h-12 animate-spin text-primary" />
-                  <p className="font-medium">{file?.name} ayrıştırılıyor...</p>
-                  <p className="text-sm text-muted-foreground">İşlemler çıkarılıyor ve kategorize ediliyor</p>
+                  <p className="font-medium">{selectedFileLabel} ayrıştırılıyor...</p>
+                  <p className="text-sm text-muted-foreground">
+                    Dosyalar okunuyor, işlemler çıkarılıyor ve kategorize ediliyor.
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center space-y-4 text-center pointer-events-none">
@@ -212,15 +270,41 @@ export default function Upload() {
                     <UploadCloud className="w-10 h-10 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="font-medium">Sürükleyip bırakın veya seçmek için tıklayın</p>
-                    <p className="text-sm text-muted-foreground mt-1">CSV, XLSX, XLS, PDF - en fazla 20 MB</p>
+                    <p className="font-medium">Sürükleyip bırakın veya dosya seçmek için tıklayın</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      CSV, XLSX, XLS, PDF - dosya başına en fazla 20 MB
+                    </p>
                   </div>
                 </div>
               )}
-              <input type="file" className="hidden" ref={fileInputRef}
+              <input
+                type="file"
+                className="hidden"
+                ref={fileInputRef}
                 accept=".csv,.xlsx,.xls,.pdf"
-                onChange={(e) => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); }} />
+                multiple
+                onChange={(e) => { if (e.target.files?.length) handleFilesSelect(e.target.files); }}
+              />
             </div>
+
+            {fileSummaries.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {fileSummaries.map((summary) => (
+                  <div key={summary.name} className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                    <Files className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{summary.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {summary.status === "parsed" ? `${summary.transactionCount} işlem okundu` : summary.errors.join(" ")}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className={summary.status === "parsed" ? "text-emerald-600 border-emerald-400" : "text-rose-600 border-rose-400"}>
+                      {summary.status === "parsed" ? "başarılı" : "hatalı"}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {error && (
               <div className="mt-4 p-4 bg-destructive/10 text-destructive rounded-lg flex items-start gap-3">
@@ -240,10 +324,16 @@ export default function Upload() {
           <div className="flex items-center gap-3 p-4 bg-card border rounded-lg shadow-sm">
             <FileText className="w-5 h-5 text-primary shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">{file?.name}</p>
-              <div className="flex items-center gap-2 mt-1">
+              <p className="font-medium text-sm truncate">{selectedFileLabel}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
                 <Badge variant="outline">{preview.length} işlem okundu</Badge>
-                {preview[0]?.bank && (
+                <Badge variant="outline">{parsedFileCount}/{files.length} dosya başarılı</Badge>
+                {failedFileCount > 0 && (
+                  <Badge variant="outline" className="text-rose-600 border-rose-400">
+                    {failedFileCount} dosya hatalı
+                  </Badge>
+                )}
+                {preview[0]?.bank && files.length === 1 && (
                   <Badge variant="outline">{preview[0].bank}</Badge>
                 )}
                 {preview.length > 0 && (
@@ -256,7 +346,7 @@ export default function Upload() {
                 )}
                 {errors.length > 0 && (
                   <Badge variant="outline" className="text-rose-600 border-rose-400">
-                    {errors.length} hata
+                    {errors.length} uyarı
                   </Badge>
                 )}
               </div>
@@ -264,11 +354,37 @@ export default function Upload() {
             <Button variant="ghost" size="icon" onClick={reset}><X className="w-4 h-4" /></Button>
           </div>
 
+          {fileSummaries.length > 1 && (
+            <Card className="shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Dosya Özeti</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {fileSummaries.map((summary) => (
+                  <div key={summary.name} className="flex flex-wrap items-center gap-2 rounded-lg border p-3 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{summary.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {summary.status === "parsed"
+                          ? `${summary.transactionCount} işlem${summary.duplicateCount > 0 ? `, ${summary.duplicateCount} mükerrer` : ""}`
+                          : summary.errors.join(" ")}
+                      </p>
+                    </div>
+                    {summary.bank && <Badge variant="outline">{summary.bank}</Badge>}
+                    <Badge variant="outline" className={summary.status === "parsed" ? "text-emerald-600 border-emerald-400" : "text-rose-600 border-rose-400"}>
+                      {summary.status === "parsed" ? "başarılı" : "hatalı"}
+                    </Badge>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
           {duplicateCount > 0 && (
             <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="text-amber-800">
-                {duplicateCount} işlem veritabanında zaten var.
+                {duplicateCount} işlem veritabanında veya seçili dosyalar içinde zaten var.
               </span>
               <label className="flex items-center gap-1.5 ml-auto cursor-pointer shrink-0">
                 <input type="checkbox" checked={includeDuplicates}
@@ -291,7 +407,7 @@ export default function Upload() {
 
           <Card className="shadow-sm">
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base">
                   Önizleme - {toImport.length} işlem içe aktarılacak
                 </CardTitle>
@@ -303,11 +419,12 @@ export default function Upload() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-0 overflow-auto max-h-[400px]">
+            <CardContent className="p-0 overflow-auto max-h-[460px]">
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow className="bg-muted/40">
                     <TableHead>Durum</TableHead>
+                    {showFileColumn && <TableHead>Dosya</TableHead>}
                     <TableHead>Tarih</TableHead>
                     <TableHead>İş yeri</TableHead>
                     <TableHead>Tür</TableHead>
@@ -318,12 +435,17 @@ export default function Upload() {
                 </TableHeader>
                 <TableBody>
                   {preview.map((t, i) => (
-                    <TableRow key={i} className={t.isDuplicate ? "opacity-50 bg-amber-50/50" : ""}>
+                    <TableRow key={`${t.sourceFile ?? "file"}-${i}`} className={t.isDuplicate ? "opacity-50 bg-amber-50/50" : ""}>
                       <TableCell>
                         {t.isDuplicate
                           ? <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">mükerrer</Badge>
                           : <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400">yeni</Badge>}
                       </TableCell>
+                      {showFileColumn && (
+                        <TableCell className="text-xs text-muted-foreground max-w-[180px] truncate" title={t.sourceFile}>
+                          {t.sourceFile}
+                        </TableCell>
+                      )}
                       <TableCell className="text-sm">{t.date}</TableCell>
                       <TableCell className="text-sm font-medium">{t.merchant}</TableCell>
                       <TableCell>

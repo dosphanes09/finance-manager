@@ -43,6 +43,7 @@ const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"
 const uploadsDir = path.resolve(workspaceRoot, ".local/uploads");
 const uploadRateLimitWindowMs = parsePositiveInteger(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS, 60_000);
 const uploadRateLimitMax = parsePositiveInteger(process.env.UPLOAD_RATE_LIMIT_MAX, 8);
+const maxUploadFiles = parsePositiveInteger(process.env.MAX_UPLOAD_FILES, 20);
 
 const storage = multer.diskStorage({
   destination: async (_req, _file, cb) => {
@@ -57,7 +58,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+  limits: { fileSize: MAX_UPLOAD_BYTES, files: maxUploadFiles },
   fileFilter: (_req, file, cb) => {
     try {
       validateUploadMetadata(file);
@@ -71,6 +72,7 @@ const upload = multer({
 const router: IRouter = Router();
 const uploadRateLimit = createUploadRateLimit(uploadRateLimitWindowMs, uploadRateLimitMax);
 const statementUpload = createStatementUploadMiddleware();
+const statementBatchUpload = createStatementUploadMiddleware("batch");
 
 async function parseFile(filePath: string, ext: SupportedUploadExtension, options: PdfParseOptions = {}) {
   if (ext === ".csv") return parseCsv(filePath);
@@ -182,6 +184,99 @@ async function detectDuplicates(
   }
 }
 
+type PreviewCandidate = {
+  date: string;
+  merchant: string;
+  description: string;
+  amount: number;
+  type: string;
+  currency: string;
+  transactionType: string;
+  transactionKind: string;
+  balance: number | null;
+  category: string;
+  bank: string;
+  parser: string;
+  confidence: number;
+  categorizationConfidence: number;
+  categorizationSource: string;
+  categorizationExplanation: string;
+  month: string;
+  sourceFile?: string;
+  sourceFileIndex?: number;
+};
+
+function duplicateKey(t: { date: string; merchant: string; amount: number }) {
+  return `${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`;
+}
+
+async function buildPreviewWithoutDuplicateFlags(
+  file: Express.Multer.File,
+  req: Request,
+): Promise<PreviewCandidate[]> {
+  const ext = validateUploadMetadata(file);
+  const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
+  await validateUploadContent(file.path, ext);
+  const parsed = await parseFile(file.path, ext, pdfOptions);
+
+  if (parsed.length === 0) {
+    throw new Error("No transactions could be parsed from this file. Please check the format.");
+  }
+
+  const [customRules, merchantMemory] = await Promise.all([
+    loadCustomRules(req.log),
+    loadMerchantMemory(parsed),
+  ]);
+
+  return Promise.all(parsed.map(async (t) => {
+    const merchant = sanitizeStoredText(t.merchant);
+    const description = sanitizeStoredText(t.description);
+    const sanitizedTransaction = { ...t, merchant, description };
+    const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
+
+    return {
+      date: t.date,
+      merchant: sanitizeStoredText(categorization.merchant),
+      description,
+      amount: t.amount,
+      type: t.type,
+      currency: t.currency ?? "TRY",
+      transactionType: t.transactionType ?? t.type,
+      transactionKind: t.transactionKind ?? "other",
+      balance: t.balance ?? null,
+      category: normalizeCategoryId(categorization.category),
+      bank: t.bank ?? "generic",
+      parser: t.parser ?? "generic",
+      confidence: t.confidence ?? categorization.confidence,
+      categorizationConfidence: categorization.confidence,
+      categorizationSource: categorization.source,
+      categorizationExplanation: categorization.explanation,
+      month: t.date.substring(0, 7),
+    };
+  }));
+}
+
+async function applyDuplicateFlags<T extends PreviewCandidate>(
+  transactions: T[],
+  log?: Request["log"],
+) {
+  const duplicateDetection = await detectDuplicates(transactions, log);
+  const seenKeys = new Set<string>();
+
+  const preview = transactions.map((t) => {
+    const key = duplicateKey(t);
+    const isDuplicate = duplicateDetection.existingKeys.has(key) || seenKeys.has(key);
+    seenKeys.add(key);
+    return { ...t, isDuplicate };
+  });
+
+  return {
+    preview,
+    duplicateCount: preview.filter((p) => p.isDuplicate).length,
+    errors: duplicateDetection.errors,
+  };
+}
+
 async function loadCustomRules(log?: Request["log"]): Promise<CustomRule[]> {
   try {
     return await db
@@ -207,65 +302,116 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
   const filePath = file.path;
 
   try {
-    const ext = validateUploadMetadata(file);
-    const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
-    await validateUploadContent(filePath, ext);
-    const parsed = await parseFile(filePath, ext, pdfOptions);
-
-    if (parsed.length === 0) {
-      res.status(400).json({ error: "No transactions could be parsed from this file. Please check the format." });
-      return;
-    }
-
-    const [customRules, merchantMemory] = await Promise.all([
-      loadCustomRules(req.log),
-      loadMerchantMemory(parsed),
-    ]);
-
-    const previewWithoutDuplicateFlags = await Promise.all(parsed.map(async (t) => {
-      const merchant = sanitizeStoredText(t.merchant);
-      const description = sanitizeStoredText(t.description);
-      const sanitizedTransaction = { ...t, merchant, description };
-      const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
-
-      return {
-        date: t.date,
-        merchant: sanitizeStoredText(categorization.merchant),
-        description,
-        amount: t.amount,
-        type: t.type,
-        currency: t.currency ?? "TRY",
-        transactionType: t.transactionType ?? t.type,
-        transactionKind: t.transactionKind ?? "other",
-        balance: t.balance ?? null,
-        category: normalizeCategoryId(categorization.category),
-        bank: t.bank ?? "generic",
-        parser: t.parser ?? "generic",
-        confidence: t.confidence ?? categorization.confidence,
-        categorizationConfidence: categorization.confidence,
-        categorizationSource: categorization.source,
-        categorizationExplanation: categorization.explanation,
-        month: t.date.substring(0, 7),
-      };
-    }));
-
-    const duplicateDetection = await detectDuplicates(previewWithoutDuplicateFlags, req.log);
-    const existingKeys = duplicateDetection.existingKeys;
-    const preview = previewWithoutDuplicateFlags.map((t) => ({
-      ...t,
-      isDuplicate: existingKeys.has(`${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`),
-    }));
-
-    const duplicateCount = preview.filter((p) => p.isDuplicate).length;
+    const previewWithoutDuplicateFlags = await buildPreviewWithoutDuplicateFlags(file, req);
+    const { preview, duplicateCount, errors } = await applyDuplicateFlags(previewWithoutDuplicateFlags, req.log);
 
     res.json(
-      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors: duplicateDetection.errors })
+      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors })
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement for preview");
     res.status(err instanceof UploadValidationError ? err.statusCode : 400).json(parseErrorPayload(err, "Failed to parse file. Please ensure it is a valid bank statement."));
   } finally {
     await safeDeleteUpload(uploadsDir, filePath).catch((err) => req.log.warn({ error: sanitizeErrorForLog(err) }, "Failed to clean uploaded file"));
+  }
+});
+
+router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, async (req, res): Promise<void> => {
+  const files = Array.isArray(req.files) ? req.files as Express.Multer.File[] : [];
+  if (files.length === 0) {
+    res.status(400).json({ error: "No files uploaded" });
+    return;
+  }
+
+  try {
+    const combined: PreviewCandidate[] = [];
+    const fileResults: Array<{
+      name: string;
+      status: "parsed" | "failed";
+      transactionCount: number;
+      duplicateCount: number;
+      bank: string | null;
+      parser: string | null;
+      errors: string[];
+    }> = [];
+
+    for (const [index, file] of files.entries()) {
+      try {
+        const parsed = await buildPreviewWithoutDuplicateFlags(file, req);
+        const withSource = parsed.map((transaction) => ({
+          ...transaction,
+          sourceFile: file.originalname,
+          sourceFileIndex: index,
+        }));
+
+        combined.push(...withSource);
+        fileResults.push({
+          name: file.originalname,
+          status: "parsed",
+          transactionCount: withSource.length,
+          duplicateCount: 0,
+          bank: withSource[0]?.bank ?? null,
+          parser: withSource[0]?.parser ?? null,
+          errors: [],
+        });
+      } catch (err) {
+        logParseFailure(req, err, `Failed to parse statement in batch preview: ${file.originalname}`);
+        const payload = parseErrorPayload(err, "Dosya ayrıştırılamadı.");
+        fileResults.push({
+          name: file.originalname,
+          status: "failed",
+          transactionCount: 0,
+          duplicateCount: 0,
+          bank: null,
+          parser: null,
+          errors: [payload.error],
+        });
+      }
+    }
+
+    if (combined.length === 0) {
+      res.status(400).json({
+        error: "Seçilen dosyalardan işlem okunamadı.",
+        transactions: [],
+        duplicateCount: 0,
+        errors: fileResults.flatMap((file) => file.errors.map((error) => `${file.name}: ${error}`)),
+        files: fileResults,
+      });
+      return;
+    }
+
+    const { preview, duplicateCount, errors } = await applyDuplicateFlags(combined, req.log);
+    const duplicateCountsByFile = new Map<number, number>();
+    for (const transaction of preview) {
+      if (transaction.isDuplicate && transaction.sourceFileIndex !== undefined) {
+        duplicateCountsByFile.set(
+          transaction.sourceFileIndex,
+          (duplicateCountsByFile.get(transaction.sourceFileIndex) ?? 0) + 1,
+        );
+      }
+    }
+
+    const filesWithDuplicateCounts = fileResults.map((file, index) => ({
+      ...file,
+      duplicateCount: duplicateCountsByFile.get(index) ?? 0,
+    }));
+
+    res.json({
+      transactions: preview,
+      duplicateCount,
+      errors: [
+        ...errors,
+        ...fileResults.flatMap((file) => file.errors.map((error) => `${file.name}: ${error}`)),
+      ],
+      files: filesWithDuplicateCounts,
+    });
+  } finally {
+    await Promise.all(
+      files.map((file) =>
+        safeDeleteUpload(uploadsDir, file.path)
+          .catch((err) => req.log.warn({ error: sanitizeErrorForLog(err) }, "Failed to clean uploaded file")),
+      ),
+    );
   }
 });
 
@@ -390,11 +536,13 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
 
 export default router;
 
-function createStatementUploadMiddleware() {
-  const single = upload.single("file");
+function createStatementUploadMiddleware(mode: "single" | "batch" = "single") {
+  const uploadMiddleware = mode === "batch"
+    ? upload.array("files", maxUploadFiles)
+    : upload.single("file");
 
   return (req: Request, res: Response, next: NextFunction) => {
-    single(req, res, (err) => {
+    uploadMiddleware(req, res, (err) => {
       if (!err) {
         next();
         return;
@@ -402,6 +550,11 @@ function createStatementUploadMiddleware() {
 
       if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
         res.status(413).json({ error: `File is too large. Maximum size is ${MAX_UPLOAD_MB} MB.` });
+        return;
+      }
+
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_COUNT") {
+        res.status(413).json({ error: `Too many files. Maximum is ${maxUploadFiles}.` });
         return;
       }
 
