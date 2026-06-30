@@ -1,20 +1,20 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, ReceiptText, Upload, PieChart, Wallet, Lightbulb,
+  LayoutDashboard, ReceiptText, Upload, Wallet, Lightbulb,
   Settings, Tag, Menu,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
 const links = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transactions", icon: ReceiptText },
-  { href: "/upload", label: "Upload Statements", icon: Upload },
-  { href: "/categories", label: "Categories & Rules", icon: Tag },
-  { href: "/budgets", label: "Budgets", icon: Wallet },
-  { href: "/insights", label: "Insights", icon: Lightbulb },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/", label: "Panel", icon: LayoutDashboard },
+  { href: "/transactions", label: "İşlemler", icon: ReceiptText },
+  { href: "/upload", label: "Ekstre Yükle", icon: Upload },
+  { href: "/categories", label: "Kategoriler ve Kurallar", icon: Tag },
+  { href: "/budgets", label: "Bütçeler", icon: Wallet },
+  { href: "/insights", label: "İçgörüler", icon: Lightbulb },
+  { href: "/settings", label: "Ayarlar", icon: Settings },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
@@ -50,10 +50,8 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 function SidebarBrand() {
   return (
     <div className="p-5 flex items-center gap-3 border-b border-sidebar-border/50">
-      <div className="bg-primary text-primary-foreground p-1.5 rounded-md">
-        <PieChart className="w-5 h-5" />
-      </div>
-      <span className="font-bold text-lg tracking-tight">FinanceAnalyzerPro</span>
+      <img src="/fintracker-logo.png" alt="FinTracker logo" className="h-8 w-8 rounded-md object-cover" />
+      <span className="font-bold text-lg tracking-tight">FinTracker</span>
     </div>
   );
 }
@@ -68,7 +66,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <SidebarBrand />
         <NavLinks />
         <div className="p-4 text-xs text-sidebar-foreground/30 font-mono border-t border-sidebar-border/30">
-          FinanceAnalyzerPro v2.0.0
+          FinTracker v2.0.0
         </div>
       </aside>
 
@@ -87,10 +85,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
           <div className="flex items-center gap-2">
-            <div className="bg-primary text-primary-foreground p-1 rounded-md">
-              <PieChart className="w-4 h-4" />
-            </div>
-            <span className="font-bold tracking-tight">FinanceAnalyzerPro</span>
+            <img src="/fintracker-logo.png" alt="FinTracker logo" className="h-7 w-7 rounded-md object-cover" />
+            <span className="font-bold tracking-tight">FinTracker</span>
           </div>
         </header>
 

@@ -27,12 +27,12 @@ const CUSTOM_START_STORAGE_KEY = "finance-dashboard-custom-start";
 const CUSTOM_END_STORAGE_KEY = "finance-dashboard-custom-end";
 
 const PERIOD_OPTIONS: Array<{ value: GetDashboardPeriod; label: string }> = [
-  { value: "this_month", label: "This month" },
-  { value: "last_3_months", label: "Last 3 months" },
-  { value: "last_6_months", label: "Last 6 months" },
-  { value: "this_year", label: "This year" },
-  { value: "last_12_months", label: "Last 12 months" },
-  { value: "custom", label: "Custom range" },
+  { value: "this_month", label: "Bu ay" },
+  { value: "last_3_months", label: "Son 3 ay" },
+  { value: "last_6_months", label: "Son 6 ay" },
+  { value: "this_year", label: "Bu yıl" },
+  { value: "last_12_months", label: "Son 12 ay" },
+  { value: "custom", label: "Özel aralık" },
 ];
 
 function toDateInputValue(date: Date) {
@@ -140,21 +140,21 @@ export default function Dashboard() {
 
   const emptyState = (
     <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
-      <p className="text-muted-foreground text-sm">No data for this period.</p>
+      <p className="text-muted-foreground text-sm">Bu dönem için veri yok.</p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {period !== DEFAULT_DASHBOARD_PERIOD && (
           <Button variant="outline" size="sm" onClick={() => setPeriod(DEFAULT_DASHBOARD_PERIOD)}>
-            Last 12 months
+            Son 12 ay
           </Button>
         )}
         <Link href="/upload">
-          <Button variant="outline" size="sm">Upload a statement</Button>
+          <Button variant="outline" size="sm">Ekstre yükle</Button>
         </Link>
       </div>
     </div>
   );
 
-  const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "Last 12 months";
+  const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "Son 12 ay";
   const categoryBreakdown = d?.categoryBreakdown.map((row) => ({
     ...row,
     categoryLabel: getCategoryLabel(row.category),
@@ -166,15 +166,15 @@ export default function Dashboard() {
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="dashboard-title">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight" data-testid="dashboard-title">Panel</h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            {d ? `${selectedPeriodLabel}: ${formatDate(d.startDate)} - ${formatDate(d.endDate)}` : "Your financial overview"}
+            {d ? `${selectedPeriodLabel}: ${formatDate(d.startDate)} - ${formatDate(d.endDate)}` : "Finansal özetiniz"}
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <Select value={period} onValueChange={(value) => setPeriod(value as GetDashboardPeriod)}>
             <SelectTrigger className="w-full sm:w-44" data-testid="period-selector">
-              <SelectValue placeholder="Select period" />
+              <SelectValue placeholder="Dönem seçin" />
             </SelectTrigger>
             <SelectContent>
               {PERIOD_OPTIONS.map((option) => (
@@ -185,14 +185,14 @@ export default function Dashboard() {
           {period === "custom" && (
             <div className="grid grid-cols-2 gap-2">
               <Input
-                aria-label="Custom start date"
+                aria-label="Özel başlangıç tarihi"
                 type="date"
                 value={customStartDate}
                 onChange={(event) => setCustomStartDate(event.target.value)}
                 className="w-full sm:w-36"
               />
               <Input
-                aria-label="Custom end date"
+                aria-label="Özel bitiş tarihi"
                 type="date"
                 value={customEndDate}
                 onChange={(event) => setCustomEndDate(event.target.value)}
@@ -206,7 +206,7 @@ export default function Dashboard() {
       {isCustomRangeInvalid && (
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="py-3 text-sm text-destructive">
-            Choose a valid custom date range.
+            Geçerli bir özel tarih aralığı seçin.
           </CardContent>
         </Card>
       )}
@@ -224,20 +224,20 @@ export default function Dashboard() {
         <>
           {/* KPI Row */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard title="Net Balance" amount={d.netBalance} icon={<Wallet className="h-4 w-4 text-primary" />} isCurrency
-              subtitle={d.netBalance >= 0 ? "You're in the green" : "Spending exceeds income"} />
-            <SummaryCard title="Total Income" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency />
-            <SummaryCard title="Total Expenses" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
-              subtitle={d.topCategory ? `Top: ${getCategoryLabel(d.topCategory)}` : undefined} />
-            <SummaryCard title="Transactions" amount={d.transactionCount} icon={<Activity className="h-4 w-4 text-muted-foreground" />} />
+            <SummaryCard title="Net Bakiye" amount={d.netBalance} icon={<Wallet className="h-4 w-4 text-primary" />} isCurrency
+              subtitle={d.netBalance >= 0 ? "Gelir giderden yüksek" : "Gider gelirden yüksek"} />
+            <SummaryCard title="Toplam Gelir" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency />
+            <SummaryCard title="Toplam Gider" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
+              subtitle={d.topCategory ? `En yüksek: ${getCategoryLabel(d.topCategory)}` : undefined} />
+            <SummaryCard title="İşlem Sayısı" amount={d.transactionCount} icon={<Activity className="h-4 w-4 text-muted-foreground" />} />
           </div>
 
           {/* Charts Row */}
           <div className="grid gap-6 md:grid-cols-2">
             <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle>Spending by Category</CardTitle>
-                <CardDescription>Total and share for the selected period</CardDescription>
+                <CardTitle>Kategoriye Göre Harcama</CardTitle>
+                <CardDescription>Seçili dönem için toplam ve pay oranı</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                 {categoryBreakdown.length > 0 ? (
@@ -266,7 +266,7 @@ export default function Dashboard() {
                             <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: getCategoryColor(row.category, index) }} />
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium">{row.categoryLabel}</p>
-                              <p className="text-xs text-muted-foreground">{row.percentage}% share</p>
+                              <p className="text-xs text-muted-foreground">%{row.percentage} pay</p>
                             </div>
                           </div>
                           <span className="shrink-0 text-sm font-mono">{formatCurrency(row.amount)}</span>
@@ -281,7 +281,7 @@ export default function Dashboard() {
             </Card>
 
             <Card className="shadow-sm">
-              <CardHeader><CardTitle>Top Merchants</CardTitle></CardHeader>
+              <CardHeader><CardTitle>En Çok Harcama Yapılan İş Yerleri</CardTitle></CardHeader>
               <CardContent className="h-[280px]">
                 {d.topMerchants.filter((m) => m.amount > 0).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
@@ -301,8 +301,8 @@ export default function Dashboard() {
 
             <Card className="md:col-span-2 shadow-sm">
               <CardHeader>
-                <CardTitle>Income vs Expenses Trend</CardTitle>
-                <CardDescription>Empty months are shown as zero.</CardDescription>
+                <CardTitle>Gelir ve Gider Trendi</CardTitle>
+                <CardDescription>İşlem olmayan aylar sıfır olarak gösterilir.</CardDescription>
               </CardHeader>
               <CardContent className="h-[220px]">
                 {d.monthlyTrends.length > 0 ? (
@@ -325,15 +325,15 @@ export default function Dashboard() {
             {showCategoryTrend && (
               <Card className="md:col-span-2 shadow-sm">
                 <CardHeader>
-                  <CardTitle>Category Trend</CardTitle>
-                  <CardDescription>Month-by-month spending for top categories</CardDescription>
+                  <CardTitle>Kategori Trendi</CardTitle>
+                  <CardDescription>Başlıca kategoriler için aylık harcama</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[640px] text-sm">
                       <thead>
                         <tr className="border-b text-left text-xs text-muted-foreground">
-                          <th className="py-2 pr-3 font-medium">Category</th>
+                          <th className="py-2 pr-3 font-medium">Kategori</th>
                           {d.monthlyTrends.map((month) => (
                             <th key={month.month} className="px-3 py-2 text-right font-medium">{month.month}</th>
                           ))}
@@ -363,17 +363,17 @@ export default function Dashboard() {
             <Card className="shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Recent Transactions</CardTitle>
+                  <CardTitle className="text-base">Son İşlemler</CardTitle>
                   <Link href="/transactions">
                     <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-                      View all <ArrowRight className="w-3 h-3" />
+                      Tümünü gör <ArrowRight className="w-3 h-3" />
                     </Button>
                   </Link>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2 p-4 pt-0">
                 {d.recentTransactions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No transactions</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">İşlem yok</p>
                 ) : d.recentTransactions.map((t) => (
                   <div key={t.id} className="flex items-center justify-between py-1 border-b last:border-0">
                     <div className="min-w-0">
@@ -391,12 +391,12 @@ export default function Dashboard() {
             <Card className="shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingDown className="w-4 h-4 text-rose-500" /> Biggest Expenses
+                  <TrendingDown className="w-4 h-4 text-rose-500" /> En Büyük Giderler
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 p-4 pt-0">
                 {d.biggestExpenses.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No expenses</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">Gider yok</p>
                 ) : d.biggestExpenses.map((t) => (
                   <div key={t.id} className="flex items-center justify-between py-1 border-b last:border-0">
                     <div className="min-w-0">
@@ -414,21 +414,21 @@ export default function Dashboard() {
             <Card className="shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <RefreshCcw className="w-4 h-4 text-primary" /> Recurring Payments
+                  <RefreshCcw className="w-4 h-4 text-primary" /> Tekrarlayan Ödemeler
                 </CardTitle>
-                <CardDescription className="text-xs">Charged across multiple months</CardDescription>
+                <CardDescription className="text-xs">Birden fazla ayda tekrar eden ödemeler</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 p-4 pt-0">
                 {d.recurringPayments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No patterns detected yet</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">Henüz tekrar eden ödeme bulunamadı</p>
                 ) : d.recurringPayments.slice(0, 5).map((r) => (
                   <div key={r.merchant} className="flex items-center justify-between py-1 border-b last:border-0">
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">{r.merchant}</p>
-                      <p className="text-xs text-muted-foreground">{r.count} months</p>
+                      <p className="text-xs text-muted-foreground">{r.count} ay</p>
                     </div>
                     <span className="text-sm font-mono font-medium ml-3 shrink-0">
-                      {formatCurrency(r.amount)}/mo
+                      {formatCurrency(r.amount)}/ay
                     </span>
                   </div>
                 ))}

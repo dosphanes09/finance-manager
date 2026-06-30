@@ -53,7 +53,37 @@ function confidenceClass(value: number) {
 }
 
 function formatMetadata(value: string) {
-  return value.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    custom_rule: "özel kural",
+    merchant_memory: "iş yeri hafızası",
+    deterministic_rule: "deterministik kural",
+    parser_rule: "parser kuralı",
+    ai: "yapay zeka",
+    unknown: "bilinmiyor",
+    pos: "POS",
+    eft: "EFT",
+    fast: "FAST",
+    atm_withdrawal: "ATM para çekme",
+    atm_deposit: "ATM para yatırma",
+    credit_card_payment: "kredi kartı ödemesi",
+    salary: "maaş",
+    refund: "iade",
+    bill: "fatura",
+    subscription: "abonelik",
+    investment: "yatırım",
+    transfer: "transfer",
+    fee: "ücret/komisyon",
+    interest: "faiz",
+    cashback: "para iadesi",
+    other: "diğer",
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
+}
+
+function formatDirection(type: string) {
+  if (type === "credit") return "gelir";
+  if (type === "debit") return "gider";
+  return type;
 }
 
 export default function Transactions() {
@@ -132,21 +162,21 @@ export default function Transactions() {
     updateMutation.mutate({ id, data: { category: cat } }, {
       onSuccess: () => {
         invalidate();
-        toast({ title: "Category updated" });
+        toast({ title: "Kategori güncellendi" });
         openRuleDialog([id], { mode: "remember", categoryOverride: cat });
       },
     });
   };
 
   const handleDelete = (id: number) => {
-    if (!confirm("Delete this transaction?")) return;
-    deleteMutation.mutate({ id }, { onSuccess: () => { invalidate(); toast({ title: "Deleted" }); } });
+    if (!confirm("Bu işlemi silmek istiyor musunuz?")) return;
+    deleteMutation.mutate({ id }, { onSuccess: () => { invalidate(); toast({ title: "Silindi" }); } });
   };
 
   const handleSaveNote = (id: number) => {
     if (!editingNote) return;
     updateMutation.mutate({ id, data: { notes: editingNote.value } }, {
-      onSuccess: () => { invalidate(); setEditingNote(null); toast({ title: "Note saved" }); },
+      onSuccess: () => { invalidate(); setEditingNote(null); toast({ title: "Not kaydedildi" }); },
     });
   };
 
@@ -171,7 +201,7 @@ export default function Transactions() {
         invalidate();
         setSelected(new Set());
         setBulkDialogOpen(false);
-        toast({ title: `Updated ${result.updated} transactions` });
+        toast({ title: `${result.updated} işlem güncellendi` });
       },
     });
   };
@@ -186,11 +216,11 @@ export default function Transactions() {
           invalidate();
           setSelected(new Set());
           toast({
-            title: `Applied rules to ${result.updated} transaction${result.updated === 1 ? "" : "s"}`,
-            description: `${result.scanned} selected transaction${result.scanned === 1 ? "" : "s"} scanned`,
+            title: `Kurallar ${result.updated} işleme uygulandı`,
+            description: `${result.scanned} seçili işlem tarandı`,
           });
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to apply rules" }),
+        onError: () => toast({ variant: "destructive", title: "Kurallar uygulanamadı" }),
       },
     );
   };
@@ -204,9 +234,9 @@ export default function Transactions() {
         onSuccess: (result) => {
           invalidate();
           setSelected(new Set());
-          toast({ title: `Marked ${result.updated} transaction${result.updated === 1 ? "" : "s"} reviewed` });
+          toast({ title: `${result.updated} işlem incelendi olarak işaretlendi` });
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to mark reviewed" }),
+        onError: () => toast({ variant: "destructive", title: "İşlemler incelendi olarak işaretlenemedi" }),
       },
     );
   };
@@ -239,7 +269,7 @@ export default function Transactions() {
       {
         onSuccess: (drafts) => {
           if (drafts.length === 0) {
-            toast({ variant: "destructive", title: "No transactions found" });
+            toast({ variant: "destructive", title: "İşlem bulunamadı" });
             return;
           }
 
@@ -249,7 +279,7 @@ export default function Transactions() {
           setRuleDialogMode(options.mode ?? "create");
           setRuleDialogOpen(true);
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to prepare rule" }),
+        onError: () => toast({ variant: "destructive", title: "Kural hazırlanamadı" }),
       },
     );
   };
@@ -278,7 +308,7 @@ export default function Transactions() {
 
   const saveRulesFromDialog = (applyToMatches: boolean) => {
     if (!canSaveRules) {
-      toast({ variant: "destructive", title: "Fill in every pattern and category" });
+      toast({ variant: "destructive", title: "Her desen ve kategori alanını doldurun" });
       return;
     }
 
@@ -301,18 +331,18 @@ export default function Transactions() {
           setSelected(new Set());
           setRuleDialogOpen(false);
           toast({
-            title: `${result.createdRules.length} rule${result.createdRules.length === 1 ? "" : "s"} created`,
-            description: `${result.updated} transaction${result.updated === 1 ? "" : "s"} updated`,
+            title: `${result.createdRules.length} kural oluşturuldu`,
+            description: `${result.updated} işlem güncellendi`,
           });
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to create rule" }),
+        onError: () => toast({ variant: "destructive", title: "Kural oluşturulamadı" }),
       },
     );
   };
 
   const handleExportCsv = () => {
     if (!data?.transactions.length) return;
-    const headers = ["Date", "Merchant", "Description", "Type", "Transaction Kind", "Category", "Confidence", "Category Source", "Amount", "Notes"];
+    const headers = ["Tarih", "İş Yeri", "Açıklama", "Tür", "İşlem Türü", "Kategori", "Güven", "Kategori Kaynağı", "Tutar", "Notlar"];
     const rows = data.transactions.map((t) => [
       t.date, t.merchant, `"${t.description.replace(/"/g, '""')}"`,
       t.type, t.transactionKind, t.category, t.categorizationConfidence, t.categorizationSource, t.amount, t.notes ?? "",
@@ -350,7 +380,7 @@ export default function Transactions() {
 
   const openQuickReview = () => {
     if (transactions.length === 0) {
-      toast({ variant: "destructive", title: "No transactions to review" });
+      toast({ variant: "destructive", title: "İncelenecek işlem yok" });
       return;
     }
 
@@ -366,7 +396,7 @@ export default function Transactions() {
       setQuickReviewTransaction(quickReviewIndex + 1);
     } else {
       setQuickReviewOpen(false);
-      toast({ title: "Review queue complete" });
+      toast({ title: "İnceleme kuyruğu tamamlandı" });
     }
   };
 
@@ -380,7 +410,7 @@ export default function Transactions() {
           invalidate();
           advanceQuickReview();
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to update transaction" }),
+        onError: () => toast({ variant: "destructive", title: "İşlem güncellenemedi" }),
       },
     );
   };
@@ -395,7 +425,7 @@ export default function Transactions() {
           invalidate();
           advanceQuickReview();
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to mark reviewed" }),
+        onError: () => toast({ variant: "destructive", title: "İşlem incelendi olarak işaretlenemedi" }),
       },
     );
   };
@@ -413,9 +443,9 @@ export default function Transactions() {
     <div className="p-6 max-w-7xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
+          <h1 className="text-2xl font-bold tracking-tight">İşlemler</h1>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            {data ? `${data.total} transactions` : "Loading..."}
+            {data ? `${data.total} işlem` : "Yükleniyor..."}
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
@@ -423,7 +453,7 @@ export default function Transactions() {
             <>
               <Button variant="outline" size="sm" onClick={() => setBulkDialogOpen(true)}>
                 <Tag className="w-3.5 h-3.5 mr-1.5" />
-                Categorize {selected.size}
+                {selected.size} işlemi kategorize et
               </Button>
               <Button
                 variant="outline"
@@ -432,7 +462,7 @@ export default function Transactions() {
                 disabled={applySelectedRulesMutation.isPending}
               >
                 <Wand2 className="w-3.5 h-3.5 mr-1.5" />
-                Apply rules
+                Kuralları uygula
               </Button>
               <Button
                 variant="outline"
@@ -441,16 +471,16 @@ export default function Transactions() {
                 disabled={bulkReviewMutation.isPending}
               >
                 <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                Mark reviewed
+                İncelendi işaretle
               </Button>
               <Button variant="outline" size="sm" onClick={openSelectedRuleDialog} disabled={draftRuleMutation.isPending}>
                 <Wand2 className="w-3.5 h-3.5 mr-1.5" />
-                Create rule from selected
+                Seçimden kural oluştur
               </Button>
             </>
           )}
           <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={!transactions.length}>
-            <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
+            <Download className="w-3.5 h-3.5 mr-1.5" /> CSV dışa aktar
           </Button>
         </div>
       </div>
@@ -459,13 +489,13 @@ export default function Transactions() {
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search merchant or description..." value={search}
+            <Input placeholder="İş yeri veya açıklama ara..." value={search}
               onChange={(e) => { setSearch(e.target.value); setSelected(new Set()); }} className="pl-9" />
           </div>
           <Input
             value={merchantFilter}
             onChange={(e) => { setMerchantFilter(e.target.value); setSelected(new Set()); }}
-            placeholder="Merchant filter"
+            placeholder="İş yeri filtresi"
             className="lg:w-56"
           />
           <Button
@@ -473,7 +503,7 @@ export default function Transactions() {
             onClick={() => { setNeedsReview((value) => !value); setSelected(new Set()); }}
             className="lg:w-auto"
           >
-            Needs review
+            İnceleme gerekli
           </Button>
           <Button
             variant="outline"
@@ -482,29 +512,29 @@ export default function Transactions() {
             className="lg:w-auto"
           >
             <ListChecks className="w-4 h-4 mr-2" />
-            Quick review
+            Hızlı inceleme
           </Button>
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={month} onValueChange={(value) => { setMonth(value); setSelected(new Set()); }}>
-            <SelectTrigger className="w-32"><SelectValue placeholder="Month" /></SelectTrigger>
+            <SelectTrigger className="w-32"><SelectValue placeholder="Ay" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Months</SelectItem>
+              <SelectItem value="all">Tüm aylar</SelectItem>
               {months?.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={type} onValueChange={(value) => { setType(value); setSelected(new Set()); }}>
-            <SelectTrigger className="w-28"><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectTrigger className="w-28"><SelectValue placeholder="Tür" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="debit">Debit</SelectItem>
-              <SelectItem value="credit">Credit</SelectItem>
+              <SelectItem value="all">Tüm türler</SelectItem>
+              <SelectItem value="debit">Gider</SelectItem>
+              <SelectItem value="credit">Gelir</SelectItem>
             </SelectContent>
           </Select>
           <Select value={category} onValueChange={(value) => { setCategory(value); setSelected(new Set()); }}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="Category" /></SelectTrigger>
+            <SelectTrigger className="w-36"><SelectValue placeholder="Kategori" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
+              <SelectItem value="all">Tüm kategoriler</SelectItem>
               {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
             </SelectContent>
           </Select>
@@ -517,35 +547,35 @@ export default function Transactions() {
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="w-10">
                 <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll}
-                  aria-label="Select all" />
+                  aria-label="Tümünü seç" />
               </TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("date")}>
-                <span className="flex items-center">Date <SortIcon column="date" sortBy={sortBy} sortDir={sortDir} /></span>
+                <span className="flex items-center">Tarih <SortIcon column="date" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("merchant")}>
-                <span className="flex items-center">Merchant <SortIcon column="merchant" sortBy={sortBy} sortDir={sortDir} /></span>
+                <span className="flex items-center">İş yeri <SortIcon column="merchant" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
-              <TableHead className="min-w-[180px]">Original description</TableHead>
+              <TableHead className="min-w-[180px]">Orijinal açıklama</TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("category")}>
-                <span className="flex items-center">Category <SortIcon column="category" sortBy={sortBy} sortDir={sortDir} /></span>
+                <span className="flex items-center">Kategori <SortIcon column="category" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
-              <TableHead className="min-w-[170px]">Confidence</TableHead>
+              <TableHead className="min-w-[170px]">Güven</TableHead>
               <TableHead className="cursor-pointer select-none text-right" onClick={() => handleSort("amount")}>
-                <span className="flex items-center justify-end">Amount <SortIcon column="amount" sortBy={sortBy} sortDir={sortDir} /></span>
+                <span className="flex items-center justify-end">Tutar <SortIcon column="amount" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="min-w-[140px]">Notes</TableHead>
-              <TableHead className="min-w-[150px]">Actions</TableHead>
+              <TableHead>Tür</TableHead>
+              <TableHead className="min-w-[140px]">Notlar</TableHead>
+              <TableHead className="min-w-[150px]">İşlemler</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Loading...</TableCell>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Yükleniyor...</TableCell>
               </TableRow>
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">No transactions found.</TableCell>
+                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">İşlem bulunamadı.</TableCell>
               </TableRow>
             ) : (
               transactions.map((t) => (
@@ -595,7 +625,7 @@ export default function Transactions() {
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
-                      {t.type}
+                      {formatDirection(t.type)}
                     </Badge>
                     <div className="text-[11px] text-muted-foreground mt-1">{formatMetadata(t.transactionKind)}</div>
                   </TableCell>
@@ -606,13 +636,13 @@ export default function Transactions() {
                           onChange={(e) => setEditingNote({ id: t.id, value: e.target.value })}
                           onKeyDown={(e) => { if (e.key === "Enter") handleSaveNote(t.id); if (e.key === "Escape") setEditingNote(null); }}
                           autoFocus />
-                        <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleSaveNote(t.id)}>OK</Button>
+                        <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleSaveNote(t.id)}>Tamam</Button>
                       </div>
                     ) : (
                       <button className="text-xs text-muted-foreground hover:text-foreground text-left max-w-[130px] truncate block"
                         onClick={() => setEditingNote({ id: t.id, value: t.notes ?? "" })}
-                        title={t.notes ?? "Click to add note"}>
-                        {t.notes ?? <span className="italic opacity-40">Add note...</span>}
+                        title={t.notes ?? "Not eklemek için tıklayın"}>
+                        {t.notes ?? <span className="italic opacity-40">Not ekle...</span>}
                       </button>
                     )}
                   </TableCell>
@@ -626,7 +656,7 @@ export default function Transactions() {
                         disabled={draftRuleMutation.isPending}
                       >
                         <Wand2 className="h-3.5 w-3.5" />
-                        Create rule
+                        Kural oluştur
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
                         onClick={() => handleDelete(t.id)}>
@@ -644,20 +674,20 @@ export default function Transactions() {
       <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Bulk Categorize {selected.size} transactions</DialogTitle>
+            <DialogTitle>{selected.size} işlemi toplu kategorize et</DialogTitle>
           </DialogHeader>
           <div className="py-2">
             <Select value={bulkCategory} onValueChange={setBulkCategory}>
-              <SelectTrigger><SelectValue placeholder="Choose a category" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Kategori seçin" /></SelectTrigger>
               <SelectContent>
                 {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>İptal</Button>
             <Button onClick={handleBulkCategorize} disabled={!bulkCategory || bulkMutation.isPending}>
-              {bulkMutation.isPending ? "Updating..." : "Apply"}
+              {bulkMutation.isPending ? "Güncelleniyor..." : "Uygula"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -668,32 +698,32 @@ export default function Transactions() {
           <DialogHeader>
             <DialogTitle>
               {ruleDialogMode === "remember"
-                ? "Do you want to remember this categorization?"
-                : "Create categorization rule"}
+                ? "Bu kategorilendirmeyi hatırlamak ister misiniz?"
+                : "Kategorilendirme kuralı oluştur"}
             </DialogTitle>
             <DialogDescription>
               {ruleDialogMode === "remember"
-                ? "Save the transaction change only, or create a custom rule so similar transactions use this category automatically."
-                : "Create one or more custom rules from existing transactions. Custom rules override built-in rules."}
+                ? "Yalnızca bu işlemi kaydedebilir veya benzer işlemler için otomatik çalışan özel bir kural oluşturabilirsiniz."
+                : "Mevcut işlemlerden bir veya daha fazla özel kural oluşturun. Özel kurallar yerleşik kuralların önüne geçer."}
             </DialogDescription>
           </DialogHeader>
 
           {singleRuleTransaction && singleRuleDraft && (
             <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Date</span>
+                <span className="text-muted-foreground">Tarih</span>
                 <span className="font-medium">{formatDate(singleRuleTransaction.date)}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Normalized merchant</span>
+                <span className="text-muted-foreground">Normalize iş yeri</span>
                 <span className="font-medium">{singleRuleDraft.normalizedMerchant}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-muted-foreground">Current category</span>
+                <span className="text-muted-foreground">Mevcut kategori</span>
                 <span className="font-medium">{getCategory(singleRuleTransaction.category)?.label ?? singleRuleTransaction.category}</span>
               </div>
               <div>
-                <span className="text-muted-foreground block mb-1">Original description</span>
+                <span className="text-muted-foreground block mb-1">Orijinal açıklama</span>
                 <div className="text-xs break-words">{singleRuleTransaction.description}</div>
               </div>
             </div>
@@ -701,7 +731,7 @@ export default function Transactions() {
 
           {ruleDrafts.length > 1 && (
             <div className="text-sm text-muted-foreground">
-              Selected transactions have different merchants, so each merchant group can create its own rule.
+              Seçili işlemlerde farklı iş yerleri var; her iş yeri grubu için ayrı kural oluşturabilirsiniz.
             </div>
           )}
 
@@ -713,7 +743,7 @@ export default function Transactions() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <div className="font-medium">{draft.normalizedMerchant}</div>
-                      <div className="text-xs text-muted-foreground">{draft.transactionCount} selected transaction{draft.transactionCount === 1 ? "" : "s"}</div>
+                      <div className="text-xs text-muted-foreground">{draft.transactionCount} seçili işlem</div>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {draft.currentCategories.map((item) => (
@@ -727,7 +757,7 @@ export default function Transactions() {
                   <div className="grid gap-3 sm:grid-cols-[1fr_220px]">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                        Rule pattern
+                        Kural deseni
                       </label>
                       <Input
                         value={edit.pattern}
@@ -736,11 +766,11 @@ export default function Transactions() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                        New category
+                        Yeni kategori
                       </label>
                       <Select value={edit.category} onValueChange={(value) => updateDraftEdit(draft, { category: value })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Choose category" />
+                          <SelectValue placeholder="Kategori seçin" />
                         </SelectTrigger>
                         <SelectContent>
                           {categories?.filter((c) => c.id !== "other").map((cat) => (
@@ -765,37 +795,37 @@ export default function Transactions() {
             {ruleDialogMode === "remember" ? (
               <>
                 <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>
-                  No, only update this transaction
+                  Hayır, sadece bu işlemi güncelle
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => saveRulesFromDialog(false)}
                   disabled={!canSaveRules || createRulesMutation.isPending}
                 >
-                  Yes, create a rule for this merchant going forward
+                  Evet, bu iş yeri için kural oluştur
                 </Button>
                 <Button
                   onClick={() => saveRulesFromDialog(true)}
                   disabled={!canSaveRules || createRulesMutation.isPending}
                 >
-                  Yes, create a rule and apply it to all matching past transactions
+                  Evet, kural oluştur ve geçmiş eşleşmelere uygula
                 </Button>
               </>
             ) : (
               <>
-                <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => setRuleDialogOpen(false)}>İptal</Button>
                 <Button
                   variant="outline"
                   onClick={() => saveRulesFromDialog(false)}
                   disabled={!canSaveRules || createRulesMutation.isPending}
                 >
-                  Save rule only
+                  Sadece kuralı kaydet
                 </Button>
                 <Button
                   onClick={() => saveRulesFromDialog(true)}
                   disabled={!canSaveRules || createRulesMutation.isPending}
                 >
-                  Save rule and apply to all matching
+                  Kuralı kaydet ve tüm eşleşmelere uygula
                 </Button>
               </>
             )}
@@ -806,11 +836,11 @@ export default function Transactions() {
       <Dialog open={quickReviewOpen} onOpenChange={setQuickReviewOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Quick review</DialogTitle>
+            <DialogTitle>Hızlı inceleme</DialogTitle>
             <DialogDescription>
               {currentReviewTransaction
-                ? `${quickReviewIndex + 1} of ${transactions.length} transactions in the current review queue`
-                : "No transactions are available in the current review queue."}
+                ? `Mevcut inceleme kuyruğunda ${quickReviewIndex + 1} / ${transactions.length} işlem`
+                : "Mevcut inceleme kuyruğunda işlem yok."}
             </DialogDescription>
           </DialogHeader>
 
@@ -818,15 +848,15 @@ export default function Transactions() {
             <div className="space-y-4">
               <div className="grid gap-2 rounded-lg border bg-muted/30 p-3 text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Date</span>
+                  <span className="text-muted-foreground">Tarih</span>
                   <span className="font-medium">{formatDate(currentReviewTransaction.date)}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Merchant</span>
+                  <span className="text-muted-foreground">İş yeri</span>
                   <span className="font-medium text-right">{currentReviewTransaction.merchant}</span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Amount</span>
+                  <span className="text-muted-foreground">Tutar</span>
                   <span className={`font-mono font-medium ${currentReviewTransaction.type === "credit" ? "text-emerald-600" : ""}`}>
                     {formatCurrency(
                       currentReviewTransaction.type === "credit"
@@ -837,18 +867,18 @@ export default function Transactions() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground block mb-1">Original description</span>
+                  <span className="text-muted-foreground block mb-1">Orijinal açıklama</span>
                   <div className="text-xs break-words">{currentReviewTransaction.description}</div>
                 </div>
               </div>
 
               <div>
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                  Category
+                  Kategori
                 </label>
                 <Select value={quickReviewCategory} onValueChange={setQuickReviewCategory}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose category" />
+                    <SelectValue placeholder="Kategori seçin" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories?.map((c) => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
@@ -864,27 +894,27 @@ export default function Transactions() {
               onClick={() => setQuickReviewTransaction(quickReviewIndex - 1)}
               disabled={!currentReviewTransaction || quickReviewIndex === 0}
             >
-              Previous
+              Önceki
             </Button>
             <Button
               variant="outline"
               onClick={handleQuickReviewMarkReviewed}
               disabled={!currentReviewTransaction || bulkReviewMutation.isPending}
             >
-              Mark reviewed
+              İncelendi işaretle
             </Button>
             <Button
               variant="outline"
               onClick={handleQuickReviewRule}
               disabled={!currentReviewTransaction || draftRuleMutation.isPending}
             >
-              Create rule
+              Kural oluştur
             </Button>
             <Button
               onClick={handleQuickReviewSave}
               disabled={!currentReviewTransaction || !quickReviewCategory || updateMutation.isPending}
             >
-              Save & next
+              Kaydet ve sonraki
             </Button>
           </DialogFooter>
         </DialogContent>

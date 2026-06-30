@@ -31,11 +31,11 @@ export default function Settings() {
         queryClient.invalidateQueries();
         setDemoLoaded(true);
         toast({
-          title: "Demo data loaded",
-          description: `${data.count} sample transactions imported across 6 months.`,
+          title: "Demo veri yüklendi",
+          description: `6 aylık ${data.count} örnek işlem içe aktarıldı.`,
         });
       },
-      onError: () => toast({ variant: "destructive", title: "Failed to load demo data" }),
+      onError: () => toast({ variant: "destructive", title: "Demo veri yüklenemedi" }),
     });
   };
 
@@ -44,50 +44,50 @@ export default function Settings() {
       onSuccess: (data) => {
         queryClient.invalidateQueries();
         toast({
-          title: "All data deleted",
-          description: `Removed ${data.transactions} transactions and ${data.budgets} budgets.`,
+          title: "Tüm veriler silindi",
+          description: `${data.transactions} işlem ve ${data.budgets} bütçe kaldırıldı.`,
         });
       },
-      onError: () => toast({ variant: "destructive", title: "Failed to delete data" }),
+      onError: () => toast({ variant: "destructive", title: "Veriler silinemedi" }),
     });
   };
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your data and privacy preferences.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Ayarlar</h1>
+        <p className="text-muted-foreground mt-1">Veri ve gizlilik tercihlerinizi yönetin.</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-primary" />
-            Privacy & Data Storage
+            Gizlilik ve Veri Saklama
           </CardTitle>
-          <CardDescription>How FinanceAnalyzerPro handles your financial data.</CardDescription>
+          <CardDescription>FinTracker finansal verilerinizi nasıl işler?</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {[
             {
               icon: <EyeOff className="w-4 h-4 text-emerald-500" />,
-              title: "Files never stored",
-              desc: "Uploaded bank statements (CSV, Excel, PDF) are deleted immediately after parsing. Only structured transaction fields are kept.",
+              title: "Dosyalar saklanmaz",
+              desc: "Yüklenen banka ekstreleri (CSV, Excel, PDF) ayrıştırmadan sonra hemen silinir. Yalnızca yapılandırılmış işlem alanları tutulur.",
             },
             {
               icon: <Lock className="w-4 h-4 text-emerald-500" />,
-              title: "Sensitive data masked",
-              desc: "IBAN numbers, 16-digit card numbers, and long account numbers are masked with **** before being stored.",
+              title: "Hassas veriler maskelenir",
+              desc: "IBAN, 16 haneli kart numaraları ve uzun hesap numaraları kaydedilmeden önce **** ile maskelenir.",
             },
             {
               icon: <Eye className="w-4 h-4 text-emerald-500" />,
-              title: "No third-party sharing",
-              desc: "Your transaction data stays in your own database. No data is sent to analytics or advertising services.",
+              title: "Üçüncü taraf paylaşımı yok",
+              desc: "İşlem verileriniz kendi veritabanınızda kalır. Analitik veya reklam servislerine veri gönderilmez.",
             },
             {
               icon: <Database className="w-4 h-4 text-emerald-500" />,
-              title: "Data stored",
-              desc: "Only: transaction date, merchant name, masked description, amount, type, category, and optional notes.",
+              title: "Saklanan veriler",
+              desc: "Yalnızca işlem tarihi, iş yeri adı, maskelenmiş açıklama, tutar, tür, kategori ve isteğe bağlı notlar saklanır.",
             },
           ].map((item) => (
             <div key={item.title} className="flex gap-3 p-3 rounded-lg bg-muted/50">
@@ -105,11 +105,11 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Play className="w-4 h-4 text-primary" />
-            Demo Data
+            Demo Veri
           </CardTitle>
           <CardDescription>
-            Load 6 months of realistic sample transactions to explore the app without uploading real bank statements.
-            Useful for portfolio presentations.
+            Gerçek banka ekstresi yüklemeden uygulamayı denemek için 6 aylık gerçekçi örnek işlem yükleyin.
+            Portföy sunumları için kullanışlıdır.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -120,11 +120,11 @@ export default function Settings() {
               variant="outline"
             >
               <Database className="w-4 h-4 mr-2" />
-              {loadDemo.isPending ? "Loading..." : "Load Demo Data"}
+              {loadDemo.isPending ? "Yükleniyor..." : "Demo veriyi yükle"}
             </Button>
             {demoLoaded && (
               <Badge variant="outline" className="text-emerald-600 border-emerald-400">
-                ✓ Demo data loaded
+                Demo veri yüklendi
               </Badge>
             )}
           </div>
@@ -135,10 +135,10 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="w-4 h-4" />
-            Danger Zone
+            Tehlikeli Alan
           </CardTitle>
           <CardDescription>
-            Permanently delete all your transaction and budget data. This cannot be undone.
+            Tüm işlem ve bütçe verilerinizi kalıcı olarak silin. Bu işlem geri alınamaz.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -146,25 +146,25 @@ export default function Settings() {
             <AlertDialogTrigger asChild>
               <Button variant="destructive">
                 <Trash2 className="w-4 h-4 mr-2" />
-                Delete All Data
+                Tüm verileri sil
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogTitle>Emin misiniz?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently delete all transactions, budgets, and categories from your account.
-                  This action cannot be undone.
+                  Bu işlem tüm işlemleri, bütçeleri ve kategori verilerini kalıcı olarak siler.
+                  Bu işlem geri alınamaz.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogCancel>İptal</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={handleDeleteAll}
                   className="bg-destructive hover:bg-destructive/90"
                   disabled={deleteAll.isPending}
                 >
-                  Yes, delete everything
+                  Evet, her şeyi sil
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

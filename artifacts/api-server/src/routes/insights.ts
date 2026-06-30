@@ -3,6 +3,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { db, transactionsTable } from "@workspace/db";
 import { GetInsightsQueryParams, GetInsightsResponse } from "@workspace/api-zod";
 import { formatCurrency } from "@workspace/finance-format";
+import { getCategoryLabel } from "@workspace/finance-categories";
 
 const router: IRouter = Router();
 
@@ -154,14 +155,14 @@ function buildSavingsOpportunities(current: CategoryRow[], _previous: PrevRow[])
     current.map((r) => [r.category, Number(r.expenses)])
   );
 
-  if ((expMap.food ?? 0) > 400) tips.push("Your food & dining spend is high — cooking at home more often could save significantly.");
-  if ((expMap.subscriptions ?? 0) > 100) tips.push("You have multiple subscriptions — consider auditing which ones you actually use.");
-  if ((expMap.shopping ?? 0) > 300) tips.push("Shopping spend is elevated — try a 24-hour rule before non-essential purchases.");
-  if ((expMap.entertainment ?? 0) > 150) tips.push("Entertainment costs are above average — look for free or lower-cost alternatives.");
-  if ((expMap.transportation ?? 0) > 200) tips.push("Transportation costs are high — consider public transit or carpooling options.");
+  if ((expMap.food ?? 0) > 400) tips.push("Yeme içme harcamalarınız yüksek; evde daha sık yemek yapmak önemli tasarruf sağlayabilir.");
+  if ((expMap.subscriptions ?? 0) > 100) tips.push("Birden fazla aboneliğiniz var; gerçekten kullandıklarınızı gözden geçirmeyi düşünün.");
+  if ((expMap.shopping ?? 0) > 300) tips.push("Alışveriş harcamaları yükselmiş; zorunlu olmayan harcamalar için 24 saat bekleme kuralını deneyin.");
+  if ((expMap.entertainment ?? 0) > 150) tips.push("Eğlence giderleri ortalamanın üzerinde; ücretsiz veya daha düşük maliyetli alternatiflere bakın.");
+  if ((expMap.transportation ?? 0) > 200) tips.push("Ulaşım giderleri yüksek; toplu taşıma veya yol paylaşımı seçeneklerini değerlendirin.");
 
   if (tips.length === 0) {
-    tips.push("Your spending looks well-balanced this month. Keep it up!");
+    tips.push("Bu ay harcamalarınız dengeli görünüyor. Böyle devam edin!");
   }
 
   return tips;
@@ -179,18 +180,18 @@ function buildSummary(
   const fmt = (n: number) => formatCurrency(n);
   const biggestIncrease = mom.filter((m) => m.change > 0).sort((a, b) => b.change - a.change)[0];
 
-  let summary = `In ${month}, your total income was ${fmt(income)} and expenses were ${fmt(expenses)}.`;
+  let summary = `${month} döneminde toplam geliriniz ${fmt(income)}, toplam gideriniz ${fmt(expenses)}.`;
 
   if (savingsRate > 20) {
-    summary += ` You saved ${fmt(income - expenses)} (${savingsRate.toFixed(0)}% savings rate) — great work!`;
+    summary += ` ${fmt(income - expenses)} tasarruf ettiniz (%${savingsRate.toFixed(0)} tasarruf oranı). Harika!`;
   } else if (income > 0 && expenses > income) {
-    summary += ` You spent ${fmt(expenses - income)} more than you earned — consider reviewing your budget.`;
+    summary += ` Gelirinizden ${fmt(expenses - income)} daha fazla harcadınız; bütçenizi gözden geçirmeyi düşünün.`;
   } else {
-    summary += ` Your net balance was ${fmt(income - expenses)}.`;
+    summary += ` Net bakiyeniz ${fmt(income - expenses)}.`;
   }
 
   if (biggestIncrease) {
-    summary += ` Your biggest spending increase was in ${biggestIncrease.category} (+${fmt(biggestIncrease.change)} vs last month).`;
+    summary += ` En büyük harcama artışı ${getCategoryLabel(biggestIncrease.category)} kategorisinde oldu (geçen aya göre +${fmt(biggestIncrease.change)}).`;
   }
 
   return summary;

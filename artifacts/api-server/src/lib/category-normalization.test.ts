@@ -23,10 +23,10 @@ describe("category normalization", () => {
   });
 
   it("keeps dropdown values as canonical ids while displaying labels", () => {
-    const food = CATEGORIES.find((category) => category.label === "Food & Dining");
+    const food = CATEGORIES.find((category) => category.label === "Yeme İçme");
 
     assert.equal(food?.id, "food");
-    assert.equal(getCategoryLabel("food"), "Food & Dining");
+    assert.equal(getCategoryLabel("food"), "Yeme İçme");
     assert.equal(normalizeCategoryId(food?.id), "food");
   });
 });

@@ -53,7 +53,7 @@ export default function Budgets() {
   const handleSave = (category: string) => {
     const amount = parseFloat(editAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast({ variant: "destructive", title: "Enter a valid amount" });
+      toast({ variant: "destructive", title: "Geçerli bir tutar girin" });
       return;
     }
     upsertBudget.mutate(
@@ -62,7 +62,7 @@ export default function Budgets() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListBudgetsQueryKey() });
           setEditingCategory(null);
-          toast({ title: "Budget saved" });
+          toast({ title: "Bütçe kaydedildi" });
         },
       }
     );
@@ -74,7 +74,7 @@ export default function Budgets() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListBudgetsQueryKey() });
-          toast({ title: "Budget removed" });
+          toast({ title: "Bütçe silindi" });
         },
       }
     );
@@ -84,8 +84,8 @@ export default function Budgets() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Budgets</h1>
-          <p className="text-muted-foreground mt-1">Set monthly spending limits per category.</p>
+          <h1 className="text-2xl font-bold tracking-tight">Bütçeler</h1>
+          <p className="text-muted-foreground mt-1">Kategori bazında aylık harcama limitleri belirleyin.</p>
         </div>
         {months && months.length > 0 && (
           <Select value={currentMonth} onValueChange={setSelectedMonth}>
@@ -126,12 +126,12 @@ export default function Budgets() {
                         <span className="font-medium text-sm">{cat.label}</span>
                         {isOver && (
                           <Badge variant="destructive" className="text-xs py-0">
-                            <AlertTriangle className="w-3 h-3 mr-1" /> Over budget
+                            <AlertTriangle className="w-3 h-3 mr-1" /> Bütçe aşıldı
                           </Badge>
                         )}
                         {isWarning && !isOver && (
                           <Badge variant="outline" className="text-xs py-0 border-amber-400 text-amber-600">
-                            {pct}% used
+                            %{pct} kullanıldı
                           </Badge>
                         )}
                       </div>
@@ -156,7 +156,7 @@ export default function Budgets() {
                           <Input
                             type="number"
                             className="w-24 h-8 text-sm"
-                            placeholder="Amount"
+                            placeholder="Tutar"
                             value={editAmount}
                             onChange={(e) => setEditAmount(e.target.value)}
                             onKeyDown={(e) => {
@@ -166,10 +166,10 @@ export default function Budgets() {
                             autoFocus
                           />
                           <Button size="sm" className="h-8" onClick={() => handleSave(cat.id)}>
-                            Save
+                            Kaydet
                           </Button>
                           <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditingCategory(null)}>
-                            Cancel
+                            İptal
                           </Button>
                         </>
                       ) : (
@@ -184,7 +184,7 @@ export default function Budgets() {
                             }}
                           >
                             <Wallet className="w-3 h-3 mr-1" />
-                            {limit > 0 ? "Edit" : "Set budget"}
+                            {limit > 0 ? "Düzenle" : "Bütçe belirle"}
                           </Button>
                           {limit > 0 && (
                             <Button

@@ -38,11 +38,43 @@ function formatConfidence(value: number) {
 }
 
 function formatSource(source: string) {
-  return source.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    custom_rule: "özel kural",
+    merchant_memory: "iş yeri hafızası",
+    deterministic_rule: "deterministik kural",
+    parser_rule: "parser kuralı",
+    ai: "yapay zeka",
+    unknown: "bilinmiyor",
+  };
+  return labels[source] ?? source.replace(/_/g, " ");
 }
 
 function formatKind(kind: string) {
-  return kind.replace(/_/g, " ");
+  const labels: Record<string, string> = {
+    pos: "POS",
+    eft: "EFT",
+    fast: "FAST",
+    atm_withdrawal: "ATM para çekme",
+    atm_deposit: "ATM para yatırma",
+    credit_card_payment: "kredi kartı ödemesi",
+    salary: "maaş",
+    refund: "iade",
+    bill: "fatura",
+    subscription: "abonelik",
+    investment: "yatırım",
+    transfer: "transfer",
+    fee: "ücret/komisyon",
+    interest: "faiz",
+    cashback: "para iadesi",
+    other: "diğer",
+  };
+  return labels[kind] ?? kind.replace(/_/g, " ");
+}
+
+function formatDirection(type: string) {
+  if (type === "credit") return "gelir";
+  if (type === "debit") return "gider";
+  return type;
 }
 
 function confidenceClass(value: number) {
@@ -91,7 +123,7 @@ export default function Upload() {
       const res = await fetch("/api/upload/preview", { method: "POST", body: formData });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to parse file");
+        throw new Error(err.error || "Dosya ayrıştırılamadı");
       }
       const data = await res.json();
       setPreview(data.transactions);
@@ -99,7 +131,7 @@ export default function Upload() {
       setErrors(data.errors ?? []);
       setStep("preview");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to parse file";
+      const msg = err instanceof Error ? err.message : "Dosya ayrıştırılamadı";
       setError(msg);
       setStep("select");
     }
@@ -118,14 +150,14 @@ export default function Upload() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to import");
+        throw new Error(err.error || "İçe aktarma başarısız oldu");
       }
       const data = await res.json();
       setResult({ count: data.count, skipped: data.skipped });
       setStep("done");
-      toast({ title: "Import complete", description: `${data.count} transactions imported.` });
+      toast({ title: "İçe aktarma tamamlandı", description: `${data.count} işlem içe aktarıldı.` });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Import failed";
+      const msg = err instanceof Error ? err.message : "İçe aktarma başarısız oldu";
       setError(msg);
       setStep("preview");
     }
@@ -148,15 +180,15 @@ export default function Upload() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Upload Statements</h1>
-        <p className="text-muted-foreground mt-0.5 text-sm">Import bank statements — review before saving.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Ekstre Yükle</h1>
+        <p className="text-muted-foreground mt-0.5 text-sm">Banka ekstrelerini içe aktarın; kaydetmeden önce gözden geçirin.</p>
       </div>
 
       {(step === "select" || step === "previewing") && (
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle>Select a file</CardTitle>
-            <CardDescription>CSV, Excel (.xlsx, .xls), or PDF bank statements.</CardDescription>
+            <CardTitle>Dosya seçin</CardTitle>
+            <CardDescription>CSV, Excel (.xlsx, .xls) veya PDF banka ekstresi.</CardDescription>
           </CardHeader>
           <CardContent>
             <div
@@ -171,8 +203,8 @@ export default function Upload() {
               {step === "previewing" ? (
                 <div className="flex flex-col items-center space-y-4 text-center">
                   <Loader2 className="w-12 h-12 animate-spin text-primary" />
-                  <p className="font-medium">Parsing {file?.name}…</p>
-                  <p className="text-sm text-muted-foreground">Extracting and categorizing transactions</p>
+                  <p className="font-medium">{file?.name} ayrıştırılıyor...</p>
+                  <p className="text-sm text-muted-foreground">İşlemler çıkarılıyor ve kategorize ediliyor</p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center space-y-4 text-center pointer-events-none">
@@ -180,8 +212,8 @@ export default function Upload() {
                     <UploadCloud className="w-10 h-10 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="font-medium">Drag & drop or click to select</p>
-                    <p className="text-sm text-muted-foreground mt-1">CSV, XLSX, XLS, PDF — max 20 MB</p>
+                    <p className="font-medium">Sürükleyip bırakın veya seçmek için tıklayın</p>
+                    <p className="text-sm text-muted-foreground mt-1">CSV, XLSX, XLS, PDF - en fazla 20 MB</p>
                   </div>
                 </div>
               )}
@@ -194,7 +226,7 @@ export default function Upload() {
               <div className="mt-4 p-4 bg-destructive/10 text-destructive rounded-lg flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium">Error</p>
+                  <p className="font-medium">Hata</p>
                   <p className="text-sm opacity-90">{error}</p>
                 </div>
               </div>
@@ -210,21 +242,21 @@ export default function Upload() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{file?.name}</p>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="outline">{preview.length} parsed</Badge>
+                <Badge variant="outline">{preview.length} işlem okundu</Badge>
                 {preview[0]?.bank && (
                   <Badge variant="outline">{preview[0].bank}</Badge>
                 )}
                 {preview.length > 0 && (
-                  <Badge variant="outline">{formatConfidence(averageConfidence)} avg confidence</Badge>
+                  <Badge variant="outline">{formatConfidence(averageConfidence)} ortalama güven</Badge>
                 )}
                 {duplicateCount > 0 && (
                   <Badge variant="outline" className="text-amber-600 border-amber-400">
-                    <AlertTriangle className="w-3 h-3 mr-1" /> {duplicateCount} duplicates
+                    <AlertTriangle className="w-3 h-3 mr-1" /> {duplicateCount} mükerrer
                   </Badge>
                 )}
                 {errors.length > 0 && (
                   <Badge variant="outline" className="text-rose-600 border-rose-400">
-                    {errors.length} errors
+                    {errors.length} hata
                   </Badge>
                 )}
               </div>
@@ -236,12 +268,12 @@ export default function Upload() {
             <div className="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="text-amber-800">
-                {duplicateCount} transaction{duplicateCount !== 1 ? "s" : ""} already exist in your database.
+                {duplicateCount} işlem veritabanında zaten var.
               </span>
               <label className="flex items-center gap-1.5 ml-auto cursor-pointer shrink-0">
                 <input type="checkbox" checked={includeDuplicates}
                   onChange={(e) => setIncludeDuplicates(e.target.checked)} />
-                <span className="text-xs">Import anyway</span>
+                <span className="text-xs">Yine de içe aktar</span>
               </label>
             </div>
           )}
@@ -261,12 +293,12 @@ export default function Upload() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">
-                  Preview — {toImport.length} will be imported
+                  Önizleme - {toImport.length} işlem içe aktarılacak
                 </CardTitle>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={reset}>Cancel</Button>
+                  <Button variant="outline" size="sm" onClick={reset}>İptal</Button>
                   <Button size="sm" onClick={handleConfirm} disabled={toImport.length === 0}>
-                    Import {toImport.length} transactions
+                    {toImport.length} işlemi içe aktar
                   </Button>
                 </div>
               </div>
@@ -275,13 +307,13 @@ export default function Upload() {
               <Table>
                 <TableHeader className="sticky top-0 bg-card z-10">
                   <TableRow className="bg-muted/40">
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Merchant</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Durum</TableHead>
+                    <TableHead>Tarih</TableHead>
+                    <TableHead>İş yeri</TableHead>
+                    <TableHead>Tür</TableHead>
+                    <TableHead>Kategori</TableHead>
+                    <TableHead>Güven</TableHead>
+                    <TableHead className="text-right">Tutar</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -289,15 +321,15 @@ export default function Upload() {
                     <TableRow key={i} className={t.isDuplicate ? "opacity-50 bg-amber-50/50" : ""}>
                       <TableCell>
                         {t.isDuplicate
-                          ? <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">duplicate</Badge>
-                          : <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400">new</Badge>}
+                          ? <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">mükerrer</Badge>
+                          : <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-400">yeni</Badge>}
                       </TableCell>
                       <TableCell className="text-sm">{t.date}</TableCell>
                       <TableCell className="text-sm font-medium">{t.merchant}</TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {t.type}
+                            {formatDirection(t.type)}
                           </Badge>
                           <div className="text-[11px] text-muted-foreground">{formatKind(t.transactionKind)}</div>
                         </div>
@@ -343,7 +375,7 @@ export default function Upload() {
         <Card>
           <CardContent className="flex flex-col items-center py-16 gap-4">
             <Loader2 className="w-10 h-10 animate-spin text-primary" />
-            <p className="font-medium">Importing transactions…</p>
+            <p className="font-medium">İşlemler içe aktarılıyor...</p>
           </CardContent>
         </Card>
       )}
@@ -353,14 +385,14 @@ export default function Upload() {
           <CardContent className="flex flex-col items-center py-16 gap-4">
             <CheckCircle2 className="w-12 h-12 text-emerald-500" />
             <div className="text-center">
-              <p className="font-semibold text-lg">{result.count} transactions imported</p>
+              <p className="font-semibold text-lg">{result.count} işlem içe aktarıldı</p>
               {result.skipped > 0 && (
-                <p className="text-sm text-muted-foreground">{result.skipped} duplicates skipped</p>
+                <p className="text-sm text-muted-foreground">{result.skipped} mükerrer işlem atlandı</p>
               )}
             </div>
             <div className="flex gap-3 mt-2">
-              <Button variant="outline" onClick={reset}>Upload another</Button>
-              <Button onClick={() => setLocation("/transactions")}>View Transactions</Button>
+              <Button variant="outline" onClick={reset}>Başka ekstre yükle</Button>
+              <Button onClick={() => setLocation("/transactions")}>İşlemleri gör</Button>
             </div>
           </CardContent>
         </Card>

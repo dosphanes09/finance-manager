@@ -14,7 +14,7 @@ import { TrendingUp, TrendingDown, Minus, RefreshCcw, Lightbulb, Heart } from "l
 
 function ScoreRing({ score }: { score: number }) {
   const color = score >= 70 ? "#22c55e" : score >= 40 ? "#f97316" : "#ef4444";
-  const label = score >= 70 ? "Healthy" : score >= 40 ? "Fair" : "Needs Work";
+  const label = score >= 70 ? "Sağlıklı" : score >= 40 ? "Orta" : "Dikkat Gerekli";
   return (
     <div className="flex flex-col items-center gap-2">
       <div
@@ -24,7 +24,7 @@ function ScoreRing({ score }: { score: number }) {
         {score}
       </div>
       <span className="text-sm font-medium" style={{ color }}>{label}</span>
-      <span className="text-xs text-muted-foreground">Financial Health Score</span>
+      <span className="text-xs text-muted-foreground">Finansal sağlık skoru</span>
     </div>
   );
 }
@@ -54,8 +54,8 @@ export default function Insights() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Insights</h1>
-          <p className="text-muted-foreground mt-1">Your financial health at a glance.</p>
+          <h1 className="text-2xl font-bold tracking-tight">İçgörüler</h1>
+          <p className="text-muted-foreground mt-1">Finansal sağlığınıza hızlı bir bakış.</p>
         </div>
         {months && months.length > 0 && (
           <Select value={currentMonth} onValueChange={setSelectedMonth}>
@@ -80,7 +80,7 @@ export default function Insights() {
             <Card className="md:col-span-2">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <Heart className="w-4 h-4 text-primary" /> Monthly Summary
+                  <Heart className="w-4 h-4 text-primary" /> Aylık Özet
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -89,7 +89,7 @@ export default function Insights() {
                 {insights.savingsOpportunities.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
-                      <Lightbulb className="w-3 h-3" /> Savings Opportunities
+                      <Lightbulb className="w-3 h-3" /> Tasarruf Fırsatları
                     </p>
                     {insights.savingsOpportunities.map((tip, i) => (
                       <div key={i} className="text-sm text-muted-foreground flex gap-2">
@@ -105,12 +105,12 @@ export default function Insights() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Month-over-Month Spending</CardTitle>
-              <CardDescription>Compared to the previous month by category.</CardDescription>
+              <CardTitle>Aydan Aya Harcama</CardTitle>
+              <CardDescription>Kategori bazında önceki ayla karşılaştırma.</CardDescription>
             </CardHeader>
             <CardContent>
               {insights.monthOverMonth.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">Not enough data for comparison yet.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">Karşılaştırma için henüz yeterli veri yok.</p>
               ) : (
                 <div className="space-y-2">
                   {insights.monthOverMonth.map((row) => {
@@ -123,7 +123,7 @@ export default function Insights() {
                         <span className="text-sm font-medium w-32 shrink-0">{getCategoryLabel(row.category)}</span>
                         <div className="flex-1 flex items-center gap-2">
                           <span className="text-sm text-muted-foreground">{formatCurrency(row.current)}</span>
-                          <span className="text-xs text-muted-foreground">vs {formatCurrency(row.previous)}</span>
+                          <span className="text-xs text-muted-foreground">önceki {formatCurrency(row.previous)}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           {isUp ? (
@@ -152,22 +152,22 @@ export default function Insights() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <RefreshCcw className="w-4 h-4 text-primary" /> Recurring Payments
+                  <RefreshCcw className="w-4 h-4 text-primary" /> Tekrarlayan Ödemeler
                 </CardTitle>
-                <CardDescription>Merchants charged consistently across 3+ months.</CardDescription>
+                <CardDescription>3+ ay boyunca düzenli görünen iş yerleri.</CardDescription>
               </CardHeader>
               <CardContent>
                 {insights.recurringPayments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No recurring patterns detected yet.</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">Henüz tekrarlayan ödeme deseni bulunamadı.</p>
                 ) : (
                   <div className="space-y-2">
                     {insights.recurringPayments.map((r) => (
                       <div key={r.merchant} className="flex items-center justify-between py-1.5 border-b last:border-0">
                         <div>
                           <p className="text-sm font-medium">{r.merchant}</p>
-                          <p className="text-xs text-muted-foreground">{r.count} months</p>
+                          <p className="text-xs text-muted-foreground">{r.count} ay</p>
                         </div>
-                        <span className="text-sm font-semibold">{formatCurrency(r.amount)}/mo</span>
+                        <span className="text-sm font-semibold">{formatCurrency(r.amount)}/ay</span>
                       </div>
                     ))}
                   </div>
@@ -177,19 +177,19 @@ export default function Insights() {
 
             <Card>
               <CardHeader>
-                <CardTitle>New This Month</CardTitle>
-                <CardDescription>Merchants not seen in the previous month — review if expected.</CardDescription>
+                <CardTitle>Bu Ay Yeni</CardTitle>
+                <CardDescription>Önceki ay görünmeyen iş yerleri; beklenen işlemler mi kontrol edin.</CardDescription>
               </CardHeader>
               <CardContent>
                 {insights.unusualMerchants.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No new merchants this month.</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">Bu ay yeni iş yeri yok.</p>
                 ) : (
                   <div className="space-y-2">
                     {insights.unusualMerchants.map((r) => (
                       <div key={r.merchant} className="flex items-center justify-between py-1.5 border-b last:border-0">
                         <div>
                           <p className="text-sm font-medium">{r.merchant}</p>
-                          <p className="text-xs text-muted-foreground">{r.count} transaction{r.count !== 1 ? "s" : ""}</p>
+                          <p className="text-xs text-muted-foreground">{r.count} işlem</p>
                         </div>
                         <Badge variant="outline" className="text-xs">{formatCurrency(r.amount)}</Badge>
                       </div>

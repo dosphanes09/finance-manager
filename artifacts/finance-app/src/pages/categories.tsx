@@ -61,7 +61,7 @@ export default function Categories() {
 
   const handleAddRule = () => {
     if (!pattern.trim() || !selectedCategory) {
-      toast({ variant: "destructive", title: "Fill in both fields" });
+      toast({ variant: "destructive", title: "İki alanı da doldurun" });
       return;
     }
     createRule.mutate(
@@ -71,9 +71,9 @@ export default function Categories() {
           refreshRules();
           setPattern("");
           setSelectedCategory("");
-          toast({ title: "Rule created", description: `"${pattern}" -> ${selectedCategory}` });
+          toast({ title: "Kural oluşturuldu", description: `"${pattern}" -> ${getCategory(selectedCategory)?.label ?? selectedCategory}` });
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to create rule" }),
+        onError: () => toast({ variant: "destructive", title: "Kural oluşturulamadı" }),
       },
     );
   };
@@ -84,7 +84,7 @@ export default function Categories() {
       {
         onSuccess: () => {
           refreshRules();
-          toast({ title: "Rule deleted" });
+          toast({ title: "Kural silindi" });
         },
       },
     );
@@ -93,7 +93,7 @@ export default function Categories() {
   const handleApproveSuggestion = (suggestion: RuleSuggestion) => {
     const edit = getSuggestionEdit(suggestion);
     if (!edit.pattern.trim() || !edit.category) {
-      toast({ variant: "destructive", title: "Fill in both fields" });
+      toast({ variant: "destructive", title: "İki alanı da doldurun" });
       return;
     }
 
@@ -104,11 +104,11 @@ export default function Categories() {
           refreshRules();
           setRejectedSuggestions((current) => new Set(current).add(suggestion.id));
           toast({
-            title: "Rule approved",
+            title: "Kural onaylandı",
             description: `${suggestion.merchant} -> ${getCategory(edit.category)?.label ?? edit.category}`,
           });
         },
-        onError: () => toast({ variant: "destructive", title: "Failed to approve rule" }),
+        onError: () => toast({ variant: "destructive", title: "Kural onaylanamadı" }),
       },
     );
   };
@@ -122,20 +122,20 @@ export default function Categories() {
       onSuccess: (result) => {
         queryClient.invalidateQueries();
         toast({
-          title: "Rules applied",
-          description: `${result.updated} of ${result.scanned} transactions updated`,
+          title: "Kurallar uygulandı",
+          description: `${result.scanned} işlem tarandı, ${result.updated} işlem güncellendi`,
         });
       },
-      onError: () => toast({ variant: "destructive", title: "Failed to apply rules" }),
+      onError: () => toast({ variant: "destructive", title: "Kurallar uygulanamadı" }),
     });
   };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Categories & Rules</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Kategoriler ve Kurallar</h1>
         <p className="text-muted-foreground mt-1">
-          View spending categories and manage custom auto-categorization rules.
+          Harcama kategorilerini görüntüleyin ve özel otomatik kategorilendirme kurallarını yönetin.
         </p>
       </div>
 
@@ -143,9 +143,9 @@ export default function Categories() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Tag className="w-4 h-4" />
-            Categories
+            Kategoriler
           </CardTitle>
-          <CardDescription>Built-in spending categories used for automatic classification.</CardDescription>
+          <CardDescription>Otomatik sınıflandırmada kullanılan yerleşik harcama kategorileri.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -170,10 +170,10 @@ export default function Categories() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              Rule Suggestions
+              Kural Önerileri
             </CardTitle>
             <CardDescription>
-              Suggested from existing transactions currently marked Other or mismatched with deterministic merchant rules.
+              Diğer kategorisindeki veya deterministik iş yeri kurallarıyla uyuşmayan mevcut işlemlerden önerilir.
             </CardDescription>
           </div>
           <Button
@@ -184,13 +184,13 @@ export default function Categories() {
             className="w-full sm:w-auto"
           >
             <RefreshCw className="w-4 h-4" />
-            Refresh
+            Yenile
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           {suggestionsQuery.isLoading ? (
             <div className="text-center py-8 text-muted-foreground text-sm border rounded-lg">
-              Scanning transactions...
+              İşlemler taranıyor...
             </div>
           ) : visibleSuggestions.length > 0 ? (
             visibleSuggestions.map((suggestion) => {
@@ -225,7 +225,7 @@ export default function Categories() {
                         disabled={createRule.isPending}
                       >
                         <Check className="w-4 h-4" />
-                        Approve
+                        Onayla
                       </Button>
                       <Button
                         size="sm"
@@ -233,7 +233,7 @@ export default function Categories() {
                         onClick={() => handleRejectSuggestion(suggestion.id)}
                       >
                         <X className="w-4 h-4" />
-                        Reject
+                        Reddet
                       </Button>
                     </div>
                   </div>
@@ -241,7 +241,7 @@ export default function Categories() {
                   <div className="grid gap-3 sm:grid-cols-[1fr_220px]">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                        Rule pattern
+                        Kural deseni
                       </label>
                       <Input
                         value={edit.pattern}
@@ -250,11 +250,11 @@ export default function Categories() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                        Category
+                        Kategori
                       </label>
                       <Select value={edit.category} onValueChange={(value) => updateSuggestionEdit(suggestion, { category: value })}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
+                          <SelectValue placeholder="Kategori seçin" />
                         </SelectTrigger>
                         <SelectContent>
                           {(categories ?? []).filter((c) => c.id !== "other").map((category) => (
@@ -268,8 +268,8 @@ export default function Categories() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>{suggestion.transactionCount} transactions</span>
-                    <span>total {suggestion.totalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span>{suggestion.transactionCount} işlem</span>
+                    <span>toplam {suggestion.totalAmount.toLocaleString("tr-TR", { maximumFractionDigits: 2 })}</span>
                     {suggestion.currentCategories.map((item) => (
                       <Badge key={item.category} variant="outline" className="text-xs">
                         {item.count} {getCategory(item.category)?.label ?? item.category}
@@ -287,7 +287,7 @@ export default function Categories() {
             })
           ) : (
             <div className="text-center py-8 text-muted-foreground text-sm border rounded-lg">
-              No rule suggestions right now.
+              Şu anda kural önerisi yok.
             </div>
           )}
         </CardContent>
@@ -296,10 +296,10 @@ export default function Categories() {
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle>Custom Rules</CardTitle>
+            <CardTitle>Özel Kurallar</CardTitle>
             <CardDescription>
-              If a transaction description contains your keyword, it will be assigned to that category automatically during import.
-              Custom rules are checked before built-in ones.
+              İşlem açıklaması belirlediğiniz anahtar kelimeyi içerirse içe aktarma sırasında otomatik olarak bu kategoriye atanır.
+              Özel kurallar yerleşik kurallardan önce kontrol edilir.
             </CardDescription>
           </div>
           <Button
@@ -310,17 +310,17 @@ export default function Categories() {
             className="w-full sm:w-auto whitespace-normal text-center sm:whitespace-nowrap"
           >
             <Wand2 className="w-4 h-4" />
-            Apply rules to existing transactions
+            Kuralları mevcut işlemlere uygula
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                Keyword / Pattern
+                Anahtar kelime / Desen
               </label>
               <Input
-                placeholder="e.g. migros, starbucks, kira..."
+                placeholder="örn. migros, starbucks, kira..."
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddRule()}
@@ -328,11 +328,11 @@ export default function Categories() {
             </div>
             <div className="w-full sm:w-48">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 block">
-                Category
+                Kategori
               </label>
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
+                  <SelectValue placeholder="Kategori seçin" />
                 </SelectTrigger>
                 <SelectContent>
                   {(categories ?? []).filter((c) => c.id !== "other").map((cat) => (
@@ -346,7 +346,7 @@ export default function Categories() {
             <div className="flex items-end">
               <Button onClick={handleAddRule} disabled={createRule.isPending} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 mr-1" />
-                Add Rule
+                Kural ekle
               </Button>
             </div>
           </div>
@@ -390,7 +390,7 @@ export default function Categories() {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground text-sm border rounded-lg">
-              No custom rules yet. Add one above to override built-in categorization.
+              Henüz özel kural yok. Yerleşik kategorilendirmeyi geçersiz kılmak için yukarıdan kural ekleyin.
             </div>
           )}
         </CardContent>
