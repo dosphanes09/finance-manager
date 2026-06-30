@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DEFAULT_DASHBOARD_PERIOD,
   filterTransactionsByDateRange,
   getDateRangeForPeriod,
   groupTransactionsByCategory,
@@ -23,6 +24,10 @@ const transactions: DashboardTransactionLike[] = [
 ];
 
 describe("dashboard periods", () => {
+  it("defaults to a broad period so imported statements are visible after upload", () => {
+    assert.equal(DEFAULT_DASHBOARD_PERIOD, "last_12_months");
+  });
+
   it("returns the current month range for the 1 month filter", () => {
     assert.deepEqual(getDateRangeForPeriod("this_month", { now: fixedNow }), {
       startDate: "2026-06-01",

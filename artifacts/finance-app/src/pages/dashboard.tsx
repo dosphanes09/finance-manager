@@ -20,7 +20,9 @@ function getCategoryColor(category: string, index: number) {
   return getCanonicalCategoryColor(category) ?? `hsl(${(index * 47) % 360}, 70%, 55%)`;
 }
 
-const PERIOD_STORAGE_KEY = "finance-dashboard-period";
+const DEFAULT_DASHBOARD_PERIOD: GetDashboardPeriod = "last_12_months";
+const PERIOD_STORAGE_KEY = "finance-dashboard-period-v2";
+const LEGACY_PERIOD_STORAGE_KEY = "finance-dashboard-period";
 const CUSTOM_START_STORAGE_KEY = "finance-dashboard-custom-start";
 const CUSTOM_END_STORAGE_KEY = "finance-dashboard-custom-end";
 
@@ -57,9 +59,26 @@ function getStoredValue(key: string, fallback: string) {
   return window.localStorage.getItem(key) || fallback;
 }
 
+function isDashboardPeriod(value: string | null): value is GetDashboardPeriod {
+  return Boolean(value && PERIOD_OPTIONS.some((option) => option.value === value));
+}
+
 function getStoredPeriod() {
-  const stored = getStoredValue(PERIOD_STORAGE_KEY, "this_month");
-  return PERIOD_OPTIONS.some((option) => option.value === stored) ? (stored as GetDashboardPeriod) : "this_month";
+  if (typeof window === "undefined") {
+    return DEFAULT_DASHBOARD_PERIOD;
+  }
+
+  const stored = window.localStorage.getItem(PERIOD_STORAGE_KEY);
+  if (isDashboardPeriod(stored)) {
+    return stored;
+  }
+
+  const legacyStored = window.localStorage.getItem(LEGACY_PERIOD_STORAGE_KEY);
+  if (isDashboardPeriod(legacyStored) && legacyStored !== "this_month") {
+    return legacyStored;
+  }
+
+  return DEFAULT_DASHBOARD_PERIOD;
 }
 
 function SummaryCard({ title, amount, icon, isCurrency = false, subtitle }: {
@@ -122,13 +141,20 @@ export default function Dashboard() {
   const emptyState = (
     <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
       <p className="text-muted-foreground text-sm">No data for this period.</p>
-      <Link href="/upload">
-        <Button variant="outline" size="sm">Upload a statement</Button>
-      </Link>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {period !== DEFAULT_DASHBOARD_PERIOD && (
+          <Button variant="outline" size="sm" onClick={() => setPeriod(DEFAULT_DASHBOARD_PERIOD)}>
+            Last 12 months
+          </Button>
+        )}
+        <Link href="/upload">
+          <Button variant="outline" size="sm">Upload a statement</Button>
+        </Link>
+      </div>
     </div>
   );
 
-  const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "This month";
+  const selectedPeriodLabel = PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "Last 12 months";
   const categoryBreakdown = d?.categoryBreakdown.map((row) => ({
     ...row,
     categoryLabel: getCategoryLabel(row.category),

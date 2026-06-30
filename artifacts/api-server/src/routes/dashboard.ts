@@ -4,6 +4,7 @@ import { db, transactionsTable } from "@workspace/db";
 import { GetDashboardQueryParams, GetDashboardResponse } from "@workspace/api-zod";
 import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
+  DEFAULT_DASHBOARD_PERIOD,
   filterTransactionsByDateRange,
   getDateRangeForPeriod,
   getMonthDateRange,
@@ -40,7 +41,7 @@ function resolveDashboardRange(params: {
     };
   }
 
-  const period = (params.period ?? "this_month") as DashboardPeriod;
+  const period = (params.period ?? DEFAULT_DASHBOARD_PERIOD) as DashboardPeriod;
 
   return {
     period,

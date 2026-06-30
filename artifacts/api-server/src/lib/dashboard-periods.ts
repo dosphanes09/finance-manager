@@ -8,6 +8,8 @@ export type DashboardPeriod =
   | "last_12_months"
   | "custom";
 
+export const DEFAULT_DASHBOARD_PERIOD: DashboardPeriod = "last_12_months";
+
 export interface DateRange {
   startDate: string;
   endDate: string;
