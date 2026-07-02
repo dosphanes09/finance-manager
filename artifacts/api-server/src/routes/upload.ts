@@ -12,6 +12,8 @@ import {
   type ParsedTransaction,
   StatementParseError,
   type PdfParseOptions,
+  createStructuredParseDiagnostics,
+  type StructuredParseDiagnostics,
 } from "../lib/parsers";
 import { type CustomRule } from "../lib/categorizer";
 import { categorizeForImport } from "../lib/import-categorization";
@@ -81,9 +83,14 @@ const uploadRateLimit = createUploadRateLimit(uploadRateLimitWindowMs, uploadRat
 const statementUpload = createStatementUploadMiddleware();
 const statementBatchUpload = createStatementUploadMiddleware("batch");
 
-async function parseFile(filePath: string, ext: SupportedUploadExtension, options: PdfParseOptions = {}) {
-  if (ext === ".csv") return parseCsv(filePath);
-  if (ext === ".xlsx" || ext === ".xls") return parseExcel(filePath);
+async function parseFile(
+  filePath: string,
+  ext: SupportedUploadExtension,
+  options: PdfParseOptions = {},
+  diagnostics?: StructuredParseDiagnostics,
+) {
+  if (ext === ".csv") return parseCsv(filePath, diagnostics);
+  if (ext === ".xlsx" || ext === ".xls") return parseExcel(filePath, diagnostics);
   if (ext === ".pdf") return parsePdf(filePath, options);
   throw new Error("Unsupported file type");
 }
@@ -167,7 +174,7 @@ function logParseFailure(
 }
 
 async function detectDuplicates(
-  candidates: Array<{ date: string; merchant: string; amount: number; accountId: number | null }>,
+  candidates: Array<{ date: string; description: string; amount: number; accountId: number | null }>,
   log?: Request["log"],
 ) {
   if (candidates.length === 0) return { existingKeys: new Set<string>(), errors: [] };
@@ -177,7 +184,7 @@ async function detectDuplicates(
     const existing = await db
       .select({
         date: transactionsTable.date,
-        merchant: transactionsTable.merchant,
+        description: transactionsTable.description,
         amount: transactionsTable.amount,
         accountId: transactionsTable.accountId,
       })
@@ -187,7 +194,7 @@ async function detectDuplicates(
     const existingKeys = new Set(
       existing.map((e) => duplicateKey({
         date: e.date,
-        merchant: e.merchant,
+        description: e.description,
         amount: parseFloat(e.amount),
         accountId: e.accountId ?? null,
       }))
@@ -231,14 +238,19 @@ type PreviewCandidate = {
   sourceFileIndex?: number;
 };
 
+type PreviewBuildResult = {
+  transactions: PreviewCandidate[];
+  diagnostics: StructuredParseDiagnostics;
+};
+
 type ImportAccount = {
   id: number;
   name: string;
   type: AccountType;
 };
 
-function duplicateKey(t: { date: string; merchant: string; amount: number; accountId: number | null }) {
-  return `${t.accountId ?? "no-account"}|${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`;
+function duplicateKey(t: { date: string; description: string; amount: number; accountId: number | null }) {
+  return `${t.accountId ?? "no-account"}|${t.date}|${normalizeForMatching(t.description)}|${t.amount.toFixed(2)}`;
 }
 
 async function getImportAccount(req: Request): Promise<ImportAccount> {
@@ -270,11 +282,12 @@ async function buildPreviewWithoutDuplicateFlags(
   file: Express.Multer.File,
   req: Request,
   account: ImportAccount,
-): Promise<PreviewCandidate[]> {
+): Promise<PreviewBuildResult> {
   const ext = validateUploadMetadata(file);
   const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
+  const diagnostics = createStructuredParseDiagnostics();
   await validateUploadContent(file.path, ext);
-  const parsed = await parseFile(file.path, ext, pdfOptions);
+  const parsed = await parseFile(file.path, ext, pdfOptions, diagnostics);
 
   if (parsed.length === 0) {
     throw new Error("No transactions could be parsed from this file. Please check the format.");
@@ -285,7 +298,7 @@ async function buildPreviewWithoutDuplicateFlags(
     loadMerchantMemory(parsed),
   ]);
 
-  return Promise.all(parsed.map(async (t) => {
+  const transactions = await Promise.all(parsed.map(async (t) => {
     const merchant = sanitizeStoredText(t.merchant);
     const description = sanitizeStoredText(t.description);
     const sanitizedTransaction = { ...t, merchant, description };
@@ -324,6 +337,9 @@ async function buildPreviewWithoutDuplicateFlags(
       month: t.date.substring(0, 7),
     };
   }));
+
+  if (diagnostics.parsedRowCount === 0) diagnostics.parsedRowCount = transactions.length;
+  return { transactions, diagnostics };
 }
 
 async function applyDuplicateFlags<T extends PreviewCandidate>(
@@ -373,11 +389,18 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
 
   try {
     const account = await getImportAccount(req);
-    const previewWithoutDuplicateFlags = await buildPreviewWithoutDuplicateFlags(file, req, account);
-    const { preview, duplicateCount, errors } = await applyDuplicateFlags(previewWithoutDuplicateFlags, req.log);
+    const previewBuild = await buildPreviewWithoutDuplicateFlags(file, req, account);
+    const { preview, duplicateCount, errors } = await applyDuplicateFlags(previewBuild.transactions, req.log);
 
     res.json(
-      PreviewStatementResponse.parse({ transactions: preview, duplicateCount, errors })
+      PreviewStatementResponse.parse({
+        transactions: preview,
+        duplicateCount,
+        errors,
+        parsedRowCount: previewBuild.diagnostics.parsedRowCount,
+        skippedRowCount: previewBuild.diagnostics.skippedRowCount,
+        skipReasons: previewBuild.diagnostics.skipReasons,
+      })
     );
   } catch (err) {
     logParseFailure(req, err, "Failed to parse statement for preview");
@@ -404,13 +427,15 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
       bank: string | null;
       parser: string | null;
       errors: string[];
+      skippedRowCount: number;
+      skipReasons: Array<{ rowNumber: number; reason: string; sample: string }>;
     }> = [];
 
     for (const [index, file] of files.entries()) {
       try {
         const account = await getImportAccount(req);
         const parsed = await buildPreviewWithoutDuplicateFlags(file, req, account);
-        const withSource = parsed.map((transaction) => ({
+        const withSource = parsed.transactions.map((transaction) => ({
           ...transaction,
           sourceFile: file.originalname,
           sourceFileIndex: index,
@@ -424,7 +449,9 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
           duplicateCount: 0,
           bank: withSource[0]?.bank ?? null,
           parser: withSource[0]?.parser ?? null,
-          errors: [],
+          errors: buildSkipWarnings(file.originalname, parsed.diagnostics),
+          skippedRowCount: parsed.diagnostics.skippedRowCount,
+          skipReasons: parsed.diagnostics.skipReasons,
         });
       } catch (err) {
         logParseFailure(req, err, `Failed to parse statement in batch preview: ${file.originalname}`);
@@ -437,6 +464,8 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
           bank: null,
           parser: null,
           errors: [payload.error],
+          skippedRowCount: 0,
+          skipReasons: [],
         });
       }
     }
@@ -476,6 +505,11 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
         ...fileResults.flatMap((file) => file.errors.map((error) => `${file.name}: ${error}`)),
       ],
       files: filesWithDuplicateCounts,
+      parsedRowCount: preview.length,
+      skippedRowCount: fileResults.reduce((total, file) => total + file.skippedRowCount, 0),
+      skipReasons: fileResults.flatMap((file) =>
+        file.skipReasons.map((reason) => ({ ...reason, fileName: file.name })),
+      ),
     });
   } finally {
     await Promise.all(
@@ -579,7 +613,8 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
     const ext = validateUploadMetadata(file);
     const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
     await validateUploadContent(filePath, ext);
-    const parsed = await parseFile(filePath, ext, pdfOptions);
+    const diagnostics = createStructuredParseDiagnostics();
+    const parsed = await parseFile(filePath, ext, pdfOptions, diagnostics);
 
     if (parsed.length === 0) {
       res.status(400).json({ error: "No transactions could be parsed from this file. Please check the format." });
@@ -712,6 +747,21 @@ function createUploadRateLimit(windowMs: number, maxRequests: number) {
 function parsePositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildSkipWarnings(fileName: string, diagnostics: StructuredParseDiagnostics) {
+  if (diagnostics.skippedRowCount === 0) return [];
+
+  const firstReasons = diagnostics.skipReasons
+    .slice(0, 5)
+    .map((reason) => `row ${reason.rowNumber}: ${reason.reason}`);
+  const suffix = diagnostics.skippedRowCount > diagnostics.skipReasons.length
+    ? `; ${diagnostics.skippedRowCount - diagnostics.skipReasons.length} more skipped rows not shown`
+    : "";
+
+  return [
+    `${diagnostics.skippedRowCount} row(s) skipped while parsing ${fileName}: ${firstReasons.join("; ")}${suffix}`,
+  ];
 }
 
 function sanitizeErrorForLog(err: unknown) {

@@ -28,6 +28,20 @@ export interface ParsedTransaction {
   categorizationExplanation?: string;
 }
 
+export interface ParseSkipReason {
+  rowNumber: number;
+  reason: string;
+  sample: string;
+}
+
+export interface StructuredParseDiagnostics {
+  detectedFormat: string | null;
+  totalDataRowCount: number;
+  parsedRowCount: number;
+  skippedRowCount: number;
+  skipReasons: ParseSkipReason[];
+}
+
 export interface PdfDiagnosticLine {
   lineNumber: number;
   text: string;
@@ -86,6 +100,15 @@ interface PickedAmount {
   role?: "debit" | "credit";
 }
 
+interface TurkishBankAccountExcelLayout {
+  headerRowIndex: number;
+  dateIndex: number;
+  receiptIndex: number | null;
+  descriptionIndex: number;
+  amountIndex: number;
+  balanceIndex: number | null;
+}
+
 export class StatementParseError extends Error {
   readonly details: PdfParseDiagnostics;
 
@@ -98,6 +121,7 @@ export class StatementParseError extends Error {
 
 const DATE_PATTERN = /\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b/g;
 const AMOUNT_PATTERN = /(?<![\p{L}\d.,/])[-+]?\s*(?:\u20ba\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})(?:\s*(?:TL|TRY|\u20ba))?(?![\d.,])/giu;
+const MAX_REPORTED_SKIP_REASONS = 25;
 
 function maskSensitiveData(text: string): string {
   return text
@@ -137,6 +161,19 @@ function parseDate(raw: string): string | null {
   return null;
 }
 
+function parseDateCell(raw: unknown): string | null {
+  if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
+    return buildIsoDate(raw.getFullYear(), raw.getMonth() + 1, raw.getDate());
+  }
+
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 20_000 && raw < 80_000) {
+    const parsed = XLSX.SSF.parse_date_code(raw);
+    if (parsed) return buildIsoDate(parsed.y, parsed.m, parsed.d);
+  }
+
+  return parseDate(stringifyCell(raw));
+}
+
 function normalizeYear(year: number): number {
   if (year >= 100) return year;
   return year >= 70 ? 1900 + year : 2000 + year;
@@ -168,14 +205,17 @@ function parseSignedAmount(raw: string | number): number {
   const isNegative = value.includes("(") || /^\s*-/.test(value);
   value = value.replace(/[()+-]/g, "").replace(/\s+/g, "");
 
-  const lastComma = value.lastIndexOf(",");
-  const lastDot = value.lastIndexOf(".");
-  const decimalSeparator = lastComma > lastDot ? "," : ".";
+  const hasComma = value.includes(",");
+  const hasDot = value.includes(".");
+  const looksLikeTurkishThousandsOnly = /^-?\d{1,3}(?:\.\d{3})+$/.test(value);
 
-  const normalized =
-    decimalSeparator === ","
-      ? value.replace(/\./g, "").replace(",", ".")
-      : value.replace(/,/g, "");
+  const normalized = hasComma
+    ? value.replace(/\./g, "").replace(",", ".")
+    : looksLikeTurkishThousandsOnly
+      ? value.replace(/\./g, "")
+      : hasDot
+        ? value.replace(/,/g, "")
+        : value;
 
   const parsed = Number.parseFloat(normalized);
   if (Number.isNaN(parsed)) return 0;
@@ -210,7 +250,41 @@ function detectType(amount: string | number, typeHint?: string): "debit" | "cred
   return "debit";
 }
 
-function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
+export function createStructuredParseDiagnostics(): StructuredParseDiagnostics {
+  return {
+    detectedFormat: null,
+    totalDataRowCount: 0,
+    parsedRowCount: 0,
+    skippedRowCount: 0,
+    skipReasons: [],
+  };
+}
+
+function recordParsed(diagnostics?: StructuredParseDiagnostics) {
+  if (diagnostics) diagnostics.parsedRowCount += 1;
+}
+
+function recordSkipped(
+  diagnostics: StructuredParseDiagnostics | undefined,
+  rowNumber: number,
+  reason: string,
+  sample: string,
+) {
+  if (!diagnostics) return;
+  diagnostics.skippedRowCount += 1;
+  if (diagnostics.skipReasons.length < MAX_REPORTED_SKIP_REASONS) {
+    diagnostics.skipReasons.push({
+      rowNumber,
+      reason,
+      sample: maskSensitiveData(sample).slice(0, 240),
+    });
+  }
+}
+
+function normalizeRows(
+  rows: Record<string, unknown>[],
+  diagnostics?: StructuredParseDiagnostics,
+): ParsedTransaction[] {
   if (rows.length === 0) return [];
 
   const keys = Object.keys(rows[0]).map((k) => normalizeForMatching(k.trim()));
@@ -241,17 +315,24 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
 
   for (const row of rows) {
     const rawKeys = Object.keys(row);
+    const rowNumber = indexOfRow(rows, row) + 2;
     const get = (key: string): string => {
       const found = rawKeys.find((k) => normalizeForMatching(k.trim()) === key);
-      return found ? String(row[found] ?? "").trim() : "";
+      return found ? stringifyCell(row[found]).trim() : "";
     };
 
     const rawDate = get(dateKey);
-    const date = parseDate(rawDate);
-    if (!date) continue;
+    const date = parseDateCell(rawDate);
+    if (!date) {
+      recordSkipped(diagnostics, rowNumber, "missing_or_invalid_date", stringifyRowSample(Object.values(row)));
+      continue;
+    }
 
     const rawDesc = get(descKey);
-    if (!rawDesc) continue;
+    if (!rawDesc) {
+      recordSkipped(diagnostics, rowNumber, "missing_description", stringifyRowSample(Object.values(row)));
+      continue;
+    }
 
     const description = maskSensitiveData(rawDesc);
     const normalizedMerchant = normalizeMerchant(description);
@@ -280,7 +361,10 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
       rawAmountForCurrency = rawAmount;
     }
 
-    if (amount === 0) continue;
+    if (amount === 0) {
+      recordSkipped(diagnostics, rowNumber, "missing_or_zero_amount", stringifyRowSample(Object.values(row)));
+      continue;
+    }
 
     const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, type);
     const currency = detectStructuredCurrency({
@@ -309,9 +393,14 @@ function normalizeRows(rows: Record<string, string>[]): ParsedTransaction[] {
         ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
         : "Category inferred from deterministic merchant and keyword rules.",
     });
+    recordParsed(diagnostics);
   }
 
   return results;
+}
+
+function indexOfRow(rows: Record<string, unknown>[], row: Record<string, unknown>) {
+  return Math.max(0, rows.indexOf(row));
 }
 
 function detectStructuredCurrency(input: {
@@ -337,23 +426,206 @@ function detectCurrencyCode(value: string): string | null {
   return null;
 }
 
-export async function parseCsv(filePath: string): Promise<ParsedTransaction[]> {
+export async function parseCsv(filePath: string, diagnostics?: StructuredParseDiagnostics): Promise<ParsedTransaction[]> {
   const content = await fs.readFile(filePath, "utf-8");
   const result = Papa.parse<Record<string, string>>(content, {
     header: true,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
   });
-  return normalizeRows(result.data);
+  diagnostics && (diagnostics.detectedFormat = "structured_csv");
+  diagnostics && (diagnostics.totalDataRowCount = result.data.length);
+  return normalizeRows(result.data, diagnostics);
 }
 
-export async function parseExcel(filePath: string): Promise<ParsedTransaction[]> {
+export async function parseExcel(filePath: string, diagnostics?: StructuredParseDiagnostics): Promise<ParsedTransaction[]> {
   const content = await fs.readFile(filePath);
   const workbook = XLSX.read(content, { type: "buffer", cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: "" });
-  return normalizeRows(rows);
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true, blankrows: false });
+  const bankAccountResult = parseTurkishBankAccountExcelRows(rawRows, diagnostics);
+  if (bankAccountResult) return bankAccountResult;
+
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+  diagnostics && (diagnostics.detectedFormat = "structured_excel");
+  diagnostics && (diagnostics.totalDataRowCount = rows.length);
+  return normalizeRows(rows, diagnostics);
+}
+
+function parseTurkishBankAccountExcelRows(
+  rows: unknown[][],
+  diagnostics?: StructuredParseDiagnostics,
+): ParsedTransaction[] | null {
+  const layout = detectTurkishBankAccountExcelLayout(rows);
+  if (!layout) return null;
+
+  if (diagnostics) {
+    diagnostics.detectedFormat = "turkish_bank_account_excel";
+    diagnostics.totalDataRowCount = rows
+      .slice(layout.headerRowIndex + 1)
+      .filter((row) => !isEmptyExcelRow(row) && !isLikelyExcelFooterRow(row))
+      .length;
+  }
+
+  const transactions: ParsedTransaction[] = [];
+
+  for (let rowIndex = layout.headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] ?? [];
+    const rowNumber = rowIndex + 1;
+    if (isEmptyExcelRow(row)) continue;
+    if (isLikelyExcelFooterRow(row)) continue;
+
+    const date = parseDateCell(row[layout.dateIndex]);
+    const descriptionRaw = stringifyCell(row[layout.descriptionIndex]).trim();
+    const amountRaw = row[layout.amountIndex];
+    const signedAmount = parseSignedAmountFromUnknown(amountRaw);
+
+    if (!date) {
+      recordSkipped(diagnostics, rowNumber, "missing_or_invalid_date", stringifyRowSample(row));
+      continue;
+    }
+
+    if (!descriptionRaw) {
+      recordSkipped(diagnostics, rowNumber, "missing_description", stringifyRowSample(row));
+      continue;
+    }
+
+    if (!Number.isFinite(signedAmount) || signedAmount === 0) {
+      recordSkipped(diagnostics, rowNumber, "missing_or_zero_amount", stringifyRowSample(row));
+      continue;
+    }
+
+    const description = maskSensitiveData(descriptionRaw);
+    const normalizedMerchant = normalizeMerchant(description);
+    const type = signedAmount < 0 ? "debit" : "credit";
+    const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, type);
+    const balance = layout.balanceIndex === null
+      ? null
+      : parseOptionalBalance(row[layout.balanceIndex]);
+
+    transactions.push({
+      date,
+      merchant: normalizedMerchant.merchant,
+      description,
+      amount: Math.abs(signedAmount),
+      type,
+      currency: detectStructuredCurrency({
+        explicitCurrency: "",
+        rawAmount: stringifyCell(amountRaw),
+        description,
+      }),
+      transactionType: type,
+      transactionKind,
+      balance,
+      category: normalizedMerchant.category,
+      bank: detectBankFromExcelRows(rows),
+      parser: "turkish_bank_account_excel",
+      confidence: Math.max(0.88, normalizedMerchant.confidence),
+      categorizationConfidence: normalizedMerchant.confidence,
+      categorizationSource: normalizedMerchant.matchedPattern ? "merchant_rule" : "built_in",
+      categorizationExplanation: normalizedMerchant.matchedPattern
+        ? `Merchant matched deterministic pattern "${normalizedMerchant.matchedPattern}".`
+        : "Parsed from Turkish bank account Excel format and categorized with deterministic merchant rules.",
+    });
+    recordParsed(diagnostics);
+  }
+
+  return transactions;
+}
+
+function detectTurkishBankAccountExcelLayout(rows: unknown[][]): TurkishBankAccountExcelLayout | null {
+  for (let rowIndex = 0; rowIndex < Math.min(rows.length, 60); rowIndex += 1) {
+    const normalizedHeaders = (rows[rowIndex] ?? []).map((cell) => normalizeHeaderCell(cell));
+    const dateIndex = normalizedHeaders.findIndex((header) => header === "tarih" || header.includes("islem tarihi"));
+    const receiptIndex = normalizedHeaders.findIndex((header) => header.includes("fis") || header.includes("dekont") || header.includes("referans"));
+    const descriptionIndex = normalizedHeaders.findIndex((header) => header.includes("aciklama"));
+    const amountIndex = normalizedHeaders.findIndex((header) =>
+      header.includes("islem tutar") ||
+      header === "tutar" ||
+      (header.includes("tutar") && !header.includes("bakiye")),
+    );
+    const balanceIndex = normalizedHeaders.findIndex((header) => header.includes("bakiye"));
+
+    if (
+      dateIndex >= 0 &&
+      receiptIndex >= 0 &&
+      descriptionIndex >= 0 &&
+      amountIndex >= 0 &&
+      balanceIndex >= 0
+    ) {
+      return {
+        headerRowIndex: rowIndex,
+        dateIndex,
+        receiptIndex,
+        descriptionIndex,
+        amountIndex,
+        balanceIndex,
+      };
+    }
+  }
+
+  return null;
+}
+
+function normalizeHeaderCell(value: unknown) {
+  return normalizeForMatching(stringifyCell(value).replace(/\s+/g, " ").trim());
+}
+
+function parseSignedAmountFromUnknown(value: unknown) {
+  if (typeof value === "number") return value;
+  const raw = stringifyCell(value);
+  if (!raw.trim()) return Number.NaN;
+  return parseSignedAmount(raw);
+}
+
+function parseOptionalBalance(value: unknown) {
+  const raw = stringifyCell(value);
+  if (!raw.trim()) return null;
+  const parsed = parseSignedAmount(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stringifyCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  }
+  return String(value).trim();
+}
+
+function stringifyRowSample(row: unknown[]) {
+  return row.map(stringifyCell).filter(Boolean).join(" | ");
+}
+
+function isEmptyExcelRow(row: unknown[]) {
+  return row.every((cell) => stringifyCell(cell) === "");
+}
+
+function isLikelyExcelFooterRow(row: unknown[]) {
+  const normalized = normalizeForMatching(stringifyRowSample(row));
+  return includesAny(normalized, [
+    "toplam",
+    "genel toplam",
+    "son bakiye",
+    "acilis bakiyesi",
+    "kapanis bakiyesi",
+  ]);
+}
+
+function detectBankFromExcelRows(rows: unknown[][]): BankId {
+  const sample = normalizeForMatching(rows.slice(0, 20).map(stringifyRowSample).join(" "));
+  if (sample.includes("ziraat")) return "ziraat";
+  if (sample.includes("garanti")) return "garanti";
+  if (sample.includes("akbank")) return "akbank";
+  if (sample.includes("yapi kredi") || sample.includes("yapikredi")) return "yapikredi";
+  if (sample.includes("qnb") || sample.includes("finansbank")) return "qnb";
+  if (sample.includes("enpara")) return "enpara";
+  if (sample.includes("vakif")) return "vakifbank";
+  if (sample.includes("halkbank")) return "halkbank";
+  if (sample.includes("kuveyt")) return "kuveytturk";
+  if (sample.includes("is bankasi") || sample.includes("turkiye is")) return "isbank";
+  return "generic";
 }
 
 export async function parsePdf(filePath: string, options: PdfParseOptions = {}): Promise<ParsedTransaction[]> {

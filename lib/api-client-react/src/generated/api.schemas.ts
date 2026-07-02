@@ -237,10 +237,20 @@ export interface PreviewTransaction {
   isDuplicate: boolean;
 }
 
+export interface ParseSkipReason {
+  rowNumber: number;
+  reason: string;
+  sample: string;
+  fileName?: string;
+}
+
 export interface PreviewResult {
   transactions: PreviewTransaction[];
   duplicateCount: number;
   errors: string[];
+  parsedRowCount: number;
+  skippedRowCount: number;
+  skipReasons: ParseSkipReason[];
 }
 
 export interface ConfirmUploadRequest {

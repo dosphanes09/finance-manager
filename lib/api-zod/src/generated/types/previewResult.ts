@@ -5,10 +5,14 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { ParseSkipReason } from './parseSkipReason';
 import type { PreviewTransaction } from './previewTransaction';
 
 export interface PreviewResult {
   transactions: PreviewTransaction[];
   duplicateCount: number;
   errors: string[];
+  parsedRowCount: number;
+  skippedRowCount: number;
+  skipReasons: ParseSkipReason[];
 }

@@ -47,6 +47,7 @@ export * from './listTransactionsSortDir';
 export * from './merchantSummary';
 export * from './monthComparison';
 export * from './monthlyTrend';
+export * from './parseSkipReason';
 export * from './previewResult';
 export * from './previewTransaction';
 export * from './previewTransactionAccountType';

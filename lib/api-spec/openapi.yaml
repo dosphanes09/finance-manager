@@ -922,7 +922,28 @@ components:
           type: array
           items:
             type: string
-      required: [transactions, duplicateCount, errors]
+        parsedRowCount:
+          type: integer
+        skippedRowCount:
+          type: integer
+        skipReasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParseSkipReason"
+      required: [transactions, duplicateCount, errors, parsedRowCount, skippedRowCount, skipReasons]
+
+    ParseSkipReason:
+      type: object
+      properties:
+        rowNumber:
+          type: integer
+        reason:
+          type: string
+        sample:
+          type: string
+        fileName:
+          type: string
+      required: [rowNumber, reason, sample]
 
     ConfirmUploadRequest:
       type: object

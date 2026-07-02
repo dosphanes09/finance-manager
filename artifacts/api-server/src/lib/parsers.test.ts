@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { parseCsv, parseExcel, parsePdfText, StatementParseError } from "./parsers";
+import { createStructuredParseDiagnostics, parseCsv, parseExcel, parsePdfText, StatementParseError } from "./parsers";
 import { detectBank, normalizeMerchant } from "./statement-parsers";
 import { inferTransactionKind } from "./statement-parsers/text-utils";
 
@@ -195,6 +195,62 @@ describe("parsePdfText", () => {
       assert.equal(rows[0].amount, 1250.5);
       assert.equal(rows[0].currency, "TRY");
       assert.equal(rows[0].merchant, "Migros");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("parses Turkish bank account Excel rows with transaction amount and balance columns", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "financeanalyzerpro-bank-xlsx-"));
+    const filePath = path.join(dir, "bank-account.xlsx");
+
+    try {
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet([
+        ["Ziraat Bankası Hesap Hareketleri"],
+        ["Tarih", "Fiş No", "Açıklama", "İşlem Tutarı", "Bakiye"],
+        [
+          "01.07.2026",
+          "F18280",
+          "ZIRAAT SANAL POS ALIŞVERİŞ KART NO: 4824 **** **** 9583 İŞYERİ: S/TRENDYOL YEMEK MUTABAKAT: 7180291",
+          "-289,99",
+          "14.946,25",
+        ],
+        ["01.07.2026", "F18280", "GELEN HAVALE", "7.000", "21.946,25"],
+        ["01.07.2026", "F18280", "BSMV Tahsilatı", "-0,2", "21.946,05"],
+        ["02.07.2026", "F18280", "Komisyon Tahsilatı", "-3.000", "18.946,05"],
+        ["02.07.2026", "F99999", "Kredi kartı tahsilatı kart ödemesi", "-1.500", "17.446,05"],
+        ["03.07.2026", "F11111", "FAST GELEN TRANSFER", "3.000", "20.446,05"],
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Hesap Hareketleri");
+      await fs.writeFile(filePath, XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+
+      const diagnostics = createStructuredParseDiagnostics();
+      const rows = await parseExcel(filePath, diagnostics);
+
+      assert.equal(rows.length, 6);
+      assert.equal(diagnostics.detectedFormat, "turkish_bank_account_excel");
+      assert.equal(diagnostics.parsedRowCount, 6);
+      assert.equal(diagnostics.skippedRowCount, 0);
+
+      assert.equal(rows[0].date, "2026-07-01");
+      assert.equal(rows[0].merchant, "Trendyol");
+      assert.equal(rows[0].amount, 289.99);
+      assert.equal(rows[0].type, "debit");
+      assert.equal(rows[0].transactionKind, "pos");
+      assert.equal(rows[0].balance, 14946.25);
+
+      assert.equal(rows[1].amount, 7000);
+      assert.equal(rows[1].type, "credit");
+      assert.equal(rows[2].amount, 0.2);
+      assert.equal(rows[2].type, "debit");
+      assert.equal(rows[2].transactionKind, "fee");
+      assert.equal(rows[3].amount, 3000);
+      assert.equal(rows[3].transactionKind, "fee");
+      assert.equal(rows[4].amount, 1500);
+      assert.equal(rows[4].transactionKind, "credit_card_payment");
+      assert.equal(rows[5].amount, 3000);
+      assert.equal(rows[5].transactionKind, "fast");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

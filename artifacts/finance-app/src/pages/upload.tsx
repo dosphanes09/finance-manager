@@ -45,6 +45,8 @@ interface PreviewFileSummary {
   status: "parsed" | "failed";
   transactionCount: number;
   duplicateCount: number;
+  skippedRowCount: number;
+  skipReasons: Array<{ rowNumber: number; reason: string; sample: string }>;
   bank: string | null;
   parser: string | null;
   errors: string[];
@@ -55,6 +57,9 @@ interface BatchPreviewResponse {
   duplicateCount: number;
   errors: string[];
   files: PreviewFileSummary[];
+  parsedRowCount: number;
+  skippedRowCount: number;
+  skipReasons: Array<{ rowNumber: number; reason: string; sample: string; fileName?: string }>;
 }
 
 const MAX_SELECTED_FILES = 20;
@@ -142,6 +147,7 @@ export default function Upload() {
   const [preview, setPreview] = useState<PreviewTx[]>([]);
   const [fileSummaries, setFileSummaries] = useState<PreviewFileSummary[]>([]);
   const [duplicateCount, setDuplicateCount] = useState(0);
+  const [skippedRowCount, setSkippedRowCount] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ count: number; skipped: number } | null>(null);
@@ -169,6 +175,7 @@ export default function Upload() {
     setPreview([]);
     setFileSummaries([]);
     setDuplicateCount(0);
+    setSkippedRowCount(0);
     setErrors([]);
     setError(null);
     setResult(null);
@@ -218,6 +225,7 @@ export default function Upload() {
       const batch = data as BatchPreviewResponse;
       setPreview(batch.transactions ?? []);
       setDuplicateCount(batch.duplicateCount ?? 0);
+      setSkippedRowCount(batch.skippedRowCount ?? 0);
       setErrors(batch.errors ?? []);
       setFileSummaries(batch.files ?? []);
       setStep("preview");
@@ -417,7 +425,9 @@ export default function Upload() {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium truncate">{summary.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {summary.status === "parsed" ? `${summary.transactionCount} işlem okundu` : summary.errors.join(" ")}
+                        {summary.status === "parsed"
+                          ? `${summary.transactionCount} işlem okundu${summary.skippedRowCount > 0 ? `, ${summary.skippedRowCount} satır atlandı` : ""}`
+                          : summary.errors.join(" ")}
                       </p>
                     </div>
                     <Badge variant="outline" className={summary.status === "parsed" ? "text-emerald-600 border-emerald-400" : "text-rose-600 border-rose-400"}>
@@ -451,6 +461,11 @@ export default function Upload() {
                 <Badge variant="outline">{preview.length} işlem okundu</Badge>
                 {selectedAccount && <Badge variant="outline">{selectedAccount.name}</Badge>}
                 <Badge variant="outline">{parsedFileCount}/{files.length} dosya başarılı</Badge>
+                {skippedRowCount > 0 && (
+                  <Badge variant="outline" className="text-amber-600 border-amber-400">
+                    {skippedRowCount} satır atlandı
+                  </Badge>
+                )}
                 {failedFileCount > 0 && (
                   <Badge variant="outline" className="text-rose-600 border-rose-400">
                     {failedFileCount} dosya hatalı
@@ -489,7 +504,7 @@ export default function Upload() {
                       <p className="font-medium truncate">{summary.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {summary.status === "parsed"
-                          ? `${summary.transactionCount} işlem${summary.duplicateCount > 0 ? `, ${summary.duplicateCount} mükerrer` : ""}`
+                          ? `${summary.transactionCount} işlem${summary.duplicateCount > 0 ? `, ${summary.duplicateCount} mükerrer` : ""}${summary.skippedRowCount > 0 ? `, ${summary.skippedRowCount} satır atlandı` : ""}`
                           : summary.errors.join(" ")}
                       </p>
                     </div>

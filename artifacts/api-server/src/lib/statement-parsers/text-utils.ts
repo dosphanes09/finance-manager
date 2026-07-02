@@ -224,6 +224,8 @@ export function inferTransactionKind(
     "ekstre odeme",
     "borc odemesi",
     "borc odeme",
+    "kredi karti tahsilati",
+    "kart tahsilati",
     "kk odeme",
     "odemetesekkur",
     "odeme tesekkur",
@@ -236,7 +238,7 @@ export function inferTransactionKind(
   if (includesAny(normalized, ["fatura", "abonelik", "otomatik odeme", "elektrik", "dogalgaz", "su faturasi", "gsm", "internet"])) return "bill";
   if (includesAny(normalized, ["spotify", "netflix", "youtube premium", "apple.com", "google", "amazon prime", "openai", "abonelik"])) return "subscription";
   if (includesAny(normalized, ["hisse", "fon", "repo", "tahvil", "viop", "yatirim", "menkul", "borsa"])) return "investment";
-  if (includesAny(normalized, ["komisyon", "masraf", "ucret", "aidat"])) return "fee";
+  if (includesAny(normalized, ["komisyon", "masraf", "ucret", "aidat", "bsmv", "kkdf", "tahsilat ucreti"])) return "fee";
   if (includesAny(normalized, ["faiz", "interest"])) return "interest";
   if (includesAny(normalized, ["cashback", "para puan", "bankkart lira", "bonus", "chip para"])) return "cashback";
   if (includesAny(normalized, ["pos", "sanal pos", "alisveris", "harcama", "market", "restoran", "ticaret"])) return "pos";

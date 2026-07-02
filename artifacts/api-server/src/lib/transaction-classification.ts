@@ -33,6 +33,8 @@ const CREDIT_CARD_PAYMENT_PATTERNS = [
   "ekstre odeme",
   "borc odemesi",
   "borc odeme",
+  "kredi karti tahsilati",
+  "kart tahsilati",
   "kk odeme",
   "odemetesekkur",
   "odeme tesekkur",

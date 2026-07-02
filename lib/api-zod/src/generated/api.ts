@@ -143,7 +143,15 @@ export const PreviewStatementResponse = zod.object({
   "isDuplicate": zod.boolean()
 })),
   "duplicateCount": zod.number(),
-  "errors": zod.array(zod.string())
+  "errors": zod.array(zod.string()),
+  "parsedRowCount": zod.number(),
+  "skippedRowCount": zod.number(),
+  "skipReasons": zod.array(zod.object({
+  "rowNumber": zod.number(),
+  "reason": zod.string(),
+  "sample": zod.string(),
+  "fileName": zod.string().optional()
+}))
 })
 
 
