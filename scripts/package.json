@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "normalize-categories": "tsx ./src/normalize-categories.ts",
+    "migrate:accounts-transfers": "tsx ./src/migrate-account-transfer-data.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

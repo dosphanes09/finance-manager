@@ -5,14 +5,23 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { PreviewTransactionAccountType } from './previewTransactionAccountType';
+import type { PreviewTransactionDirection } from './previewTransactionDirection';
 import type { PreviewTransactionTransactionType } from './previewTransactionTransactionType';
+import type { PreviewTransactionType } from './previewTransactionType';
 
 export interface PreviewTransaction {
   date: string;
   merchant: string;
   description: string;
   amount: number;
-  type: string;
+  /** @nullable */
+  accountId: number | null;
+  /** @nullable */
+  accountName: string | null;
+  accountType: PreviewTransactionAccountType;
+  type: PreviewTransactionType;
+  direction: PreviewTransactionDirection;
   currency: string;
   transactionType: PreviewTransactionTransactionType;
   transactionKind: string;

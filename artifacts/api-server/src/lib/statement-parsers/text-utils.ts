@@ -213,7 +213,24 @@ export function inferTransactionKind(
   if (includesAny(normalized, ["atm", "bankamatik"])) {
     return direction === "credit" ? "atm_deposit" : "atm_withdrawal";
   }
-  if (includesAny(normalized, ["kredi karti odeme", "kredi karti borc", "kk odeme", "odemetesekkur", "subehesaptan odeme", "odeme enpara.com cep", "enpara.com cep subesi"])) {
+  if (includesAny(normalized, [
+    "kredi karti odemesi",
+    "kredi karti odeme",
+    "kredi karti borc",
+    "kredi karti borcu",
+    "kart odemesi",
+    "kart odeme",
+    "ekstre odemesi",
+    "ekstre odeme",
+    "borc odemesi",
+    "borc odeme",
+    "kk odeme",
+    "odemetesekkur",
+    "odeme tesekkur",
+    "subehesaptan odeme",
+    "odeme enpara.com cep",
+    "enpara.com cep subesi",
+  ])) {
     return "credit_card_payment";
   }
   if (includesAny(normalized, ["fatura", "abonelik", "otomatik odeme", "elektrik", "dogalgaz", "su faturasi", "gsm", "internet"])) return "bill";

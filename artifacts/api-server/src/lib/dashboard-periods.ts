@@ -19,6 +19,7 @@ export interface DashboardTransactionLike {
   date: string;
   amount: number | string;
   type: string;
+  direction?: string | null;
   category?: string | null;
   merchant?: string | null;
 }
@@ -183,9 +184,9 @@ export function groupTransactionsByMonth<T extends DashboardTransactionLike>(
     const bucket = byMonth.get(month) ?? { month, expenses: 0, income: 0 };
     const amount = Number(transaction.amount);
 
-    if (transaction.type === "credit") {
+    if (isIncomeTransaction(transaction)) {
       bucket.income += amount;
-    } else if (transaction.type === "debit") {
+    } else if (isExpenseTransaction(transaction)) {
       bucket.expenses += amount;
     }
 
@@ -207,7 +208,7 @@ export function groupTransactionsByCategory<T extends DashboardTransactionLike>(
   const byCategory = new Map<string, { amount: number; count: number }>();
 
   for (const transaction of transactions) {
-    if (transaction.type !== "debit") {
+    if (!isExpenseTransaction(transaction)) {
       continue;
     }
 
@@ -232,4 +233,12 @@ export function groupTransactionsByCategory<T extends DashboardTransactionLike>(
 
 export function roundMoney(amount: number) {
   return Math.round(amount * 100) / 100;
+}
+
+export function isIncomeTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "income" || transaction.type === "credit";
+}
+
+export function isExpenseTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "expense" || transaction.type === "debit";
 }

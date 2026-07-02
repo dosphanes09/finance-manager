@@ -8,6 +8,7 @@ import budgetsRouter from "./budgets";
 import rulesRouter from "./rules";
 import insightsRouter from "./insights";
 import demoRouter from "./demo";
+import accountsRouter from "./accounts";
 
 const router: IRouter = Router();
 
@@ -15,6 +16,7 @@ router.use(healthRouter);
 router.use(uploadRouter);
 router.use(transactionsRouter);
 router.use(dashboardRouter);
+router.use(accountsRouter);
 router.use(categoriesRouter);
 router.use(budgetsRouter);
 router.use(rulesRouter);

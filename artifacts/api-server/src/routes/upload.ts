@@ -3,7 +3,7 @@ import { Router, type IRouter, type NextFunction, type Request, type Response } 
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
-import { categorizationRulesTable, db, transactionsTable } from "@workspace/db";
+import { accountsTable, categorizationRulesTable, db, transactionsTable } from "@workspace/db";
 import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
   parseCsv,
@@ -24,7 +24,7 @@ import {
   PreviewStatementResponse,
   ConfirmUploadBody,
 } from "@workspace/api-zod";
-import { desc, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_MB,
@@ -35,6 +35,13 @@ import {
   validateUploadMetadata,
   type SupportedUploadExtension,
 } from "../lib/upload-security";
+import {
+  classifyFinancialTransaction,
+  normalizeAccountType,
+  normalizeDirection,
+  type AccountType,
+} from "../lib/transaction-classification";
+import { normalizeForMatching } from "../lib/statement-parsers/text-utils";
 
 const workspaceRoot = process.cwd().endsWith(path.join("artifacts", "api-server"))
   ? path.resolve(process.cwd(), "../..")
@@ -121,6 +128,10 @@ function parseErrorPayload(err: unknown, fallback: string) {
     };
   }
 
+  if (err instanceof Error && (err.message.includes("account") || err.message.includes("Account"))) {
+    return { error: err.message };
+  }
+
   return { error: fallback };
 }
 
@@ -156,7 +167,7 @@ function logParseFailure(
 }
 
 async function detectDuplicates(
-  candidates: Array<{ date: string; merchant: string; amount: number }>,
+  candidates: Array<{ date: string; merchant: string; amount: number; accountId: number | null }>,
   log?: Request["log"],
 ) {
   if (candidates.length === 0) return { existingKeys: new Set<string>(), errors: [] };
@@ -164,12 +175,22 @@ async function detectDuplicates(
   const dates = [...new Set(candidates.map((c) => c.date))];
   try {
     const existing = await db
-      .select({ date: transactionsTable.date, merchant: transactionsTable.merchant, amount: transactionsTable.amount })
+      .select({
+        date: transactionsTable.date,
+        merchant: transactionsTable.merchant,
+        amount: transactionsTable.amount,
+        accountId: transactionsTable.accountId,
+      })
       .from(transactionsTable)
       .where(inArray(transactionsTable.date, dates));
 
     const existingKeys = new Set(
-      existing.map((e) => `${e.date}|${e.merchant.toLowerCase()}|${parseFloat(e.amount).toFixed(2)}`)
+      existing.map((e) => duplicateKey({
+        date: e.date,
+        merchant: e.merchant,
+        amount: parseFloat(e.amount),
+        accountId: e.accountId ?? null,
+      }))
     );
 
     return { existingKeys, errors: [] };
@@ -189,7 +210,11 @@ type PreviewCandidate = {
   merchant: string;
   description: string;
   amount: number;
+  accountId: number | null;
+  accountName: string | null;
+  accountType: AccountType;
   type: string;
+  direction: "debit" | "credit";
   currency: string;
   transactionType: string;
   transactionKind: string;
@@ -206,13 +231,45 @@ type PreviewCandidate = {
   sourceFileIndex?: number;
 };
 
-function duplicateKey(t: { date: string; merchant: string; amount: number }) {
-  return `${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`;
+type ImportAccount = {
+  id: number;
+  name: string;
+  type: AccountType;
+};
+
+function duplicateKey(t: { date: string; merchant: string; amount: number; accountId: number | null }) {
+  return `${t.accountId ?? "no-account"}|${t.date}|${t.merchant.toLowerCase()}|${t.amount.toFixed(2)}`;
+}
+
+async function getImportAccount(req: Request): Promise<ImportAccount> {
+  const rawAccountId = Array.isArray(req.body?.accountId) ? req.body.accountId[0] : req.body?.accountId;
+  const accountId = Number(rawAccountId);
+
+  if (!Number.isInteger(accountId) || accountId <= 0) {
+    throw new Error("Please select an account before importing a statement.");
+  }
+
+  const [account] = await db
+    .select({ id: accountsTable.id, name: accountsTable.name, type: accountsTable.type })
+    .from(accountsTable)
+    .where(eq(accountsTable.id, accountId))
+    .limit(1);
+
+  if (!account) {
+    throw new Error("Selected account was not found. Please create or select an account again.");
+  }
+
+  return {
+    id: account.id,
+    name: account.name,
+    type: normalizeAccountType(account.type),
+  };
 }
 
 async function buildPreviewWithoutDuplicateFlags(
   file: Express.Multer.File,
   req: Request,
+  account: ImportAccount,
 ): Promise<PreviewCandidate[]> {
   const ext = validateUploadMetadata(file);
   const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
@@ -233,24 +290,37 @@ async function buildPreviewWithoutDuplicateFlags(
     const description = sanitizeStoredText(t.description);
     const sanitizedTransaction = { ...t, merchant, description };
     const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
+    const classification = classifyFinancialTransaction({
+      accountType: account.type,
+      direction: t.transactionType ?? t.type,
+      transactionKind: t.transactionKind ?? "other",
+      merchant: categorization.merchant,
+      description,
+      category: categorization.category,
+      categorizationSource: categorization.source,
+    });
 
     return {
       date: t.date,
       merchant: sanitizeStoredText(categorization.merchant),
       description,
       amount: t.amount,
-      type: t.type,
+      accountId: account.id,
+      accountName: account.name,
+      accountType: account.type,
+      type: classification.type,
+      direction: classification.direction,
       currency: t.currency ?? "TRY",
       transactionType: t.transactionType ?? t.type,
       transactionKind: t.transactionKind ?? "other",
       balance: t.balance ?? null,
-      category: normalizeCategoryId(categorization.category),
+      category: classification.category,
       bank: t.bank ?? "generic",
       parser: t.parser ?? "generic",
       confidence: t.confidence ?? categorization.confidence,
       categorizationConfidence: categorization.confidence,
       categorizationSource: categorization.source,
-      categorizationExplanation: categorization.explanation,
+      categorizationExplanation: `${categorization.explanation} ${classification.explanation}`.trim(),
       month: t.date.substring(0, 7),
     };
   }));
@@ -302,7 +372,8 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
   const filePath = file.path;
 
   try {
-    const previewWithoutDuplicateFlags = await buildPreviewWithoutDuplicateFlags(file, req);
+    const account = await getImportAccount(req);
+    const previewWithoutDuplicateFlags = await buildPreviewWithoutDuplicateFlags(file, req, account);
     const { preview, duplicateCount, errors } = await applyDuplicateFlags(previewWithoutDuplicateFlags, req.log);
 
     res.json(
@@ -337,7 +408,8 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
 
     for (const [index, file] of files.entries()) {
       try {
-        const parsed = await buildPreviewWithoutDuplicateFlags(file, req);
+        const account = await getImportAccount(req);
+        const parsed = await buildPreviewWithoutDuplicateFlags(file, req, account);
         const withSource = parsed.map((transaction) => ({
           ...transaction,
           sourceFile: file.originalname,
@@ -430,26 +502,55 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
       return;
     }
 
-    const toInsert = toSave.map((t) => ({
+    const accountIds = [...new Set(toSave.map((t) => t.accountId).filter((id): id is number => Number.isInteger(id)))];
+    const accountRows = accountIds.length > 0
+      ? await db
+        .select({ id: accountsTable.id, name: accountsTable.name, type: accountsTable.type })
+        .from(accountsTable)
+        .where(inArray(accountsTable.id, accountIds))
+      : [];
+    const accountsById = new Map(accountRows.map((account) => [account.id, {
+      id: account.id,
+      name: account.name,
+      type: normalizeAccountType(account.type),
+    }]));
+
+    const toInsert = toSave.map((t) => {
+      const account = typeof t.accountId === "number" ? accountsById.get(t.accountId) : undefined;
+      const classification = classifyFinancialTransaction({
+        accountType: account?.type ?? t.accountType,
+        direction: t.direction ?? t.transactionType,
+        transactionKind: t.transactionKind ?? "other",
+        merchant: t.merchant,
+        description: t.description,
+        category: t.category,
+        categorizationSource: t.categorizationSource ?? "user_preview",
+      });
+
+      return {
       date: t.date,
       merchant: sanitizeStoredText(t.merchant),
       description: sanitizeStoredText(t.description),
       amount: String(t.amount),
-      type: t.type,
+      accountId: account?.id ?? t.accountId ?? null,
+      type: classification.type,
+      direction: classification.direction,
       currency: t.currency ?? "TRY",
       transactionKind: t.transactionKind ?? "other",
       bank: t.bank ?? "generic",
       parser: t.parser ?? null,
       balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
-      category: normalizeCategoryId(t.category),
+      category: classification.category,
       categorizationConfidence: String(t.categorizationConfidence ?? 1),
       categorizationSource: t.categorizationSource ?? "user_preview",
-      categorizationExplanation: t.categorizationExplanation ?? "Category accepted from upload preview.",
+      categorizationExplanation: `${t.categorizationExplanation ?? "Category accepted from upload preview."} ${classification.explanation}`.trim(),
       importConfidence: String(t.confidence ?? t.categorizationConfidence ?? 0),
       month: t.month,
-    }));
+    };
+    });
 
     const inserted = await db.insert(transactionsTable).values(toInsert).returning();
+    await matchTransferPairs(inserted, req.log);
     await rememberSavedMerchants(inserted, req.log, "import");
 
     res.json(
@@ -485,6 +586,7 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
       return;
     }
 
+    const account = await getImportAccount(req);
     const [customRules, merchantMemory] = await Promise.all([
       loadCustomRules(req.log),
       loadMerchantMemory(parsed),
@@ -495,28 +597,40 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
       const description = sanitizeStoredText(t.description);
       const sanitizedTransaction = { ...t, merchant, description };
       const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
+      const classification = classifyFinancialTransaction({
+        accountType: account.type,
+        direction: t.transactionType ?? t.type,
+        transactionKind: t.transactionKind ?? "other",
+        merchant: categorization.merchant,
+        description,
+        category: categorization.category,
+        categorizationSource: categorization.source,
+      });
 
       return {
         date: t.date,
         merchant: sanitizeStoredText(categorization.merchant),
         description,
         amount: String(t.amount),
-        type: t.type,
+        accountId: account.id,
+        type: classification.type,
+        direction: classification.direction,
         currency: t.currency ?? "TRY",
         transactionKind: t.transactionKind ?? "other",
         bank: t.bank ?? "generic",
         parser: t.parser ?? null,
         balance: t.balance === null || t.balance === undefined ? null : String(t.balance),
-        category: normalizeCategoryId(categorization.category),
+        category: classification.category,
         categorizationConfidence: String(categorization.confidence),
         categorizationSource: categorization.source,
-        categorizationExplanation: categorization.explanation,
+        categorizationExplanation: `${categorization.explanation} ${classification.explanation}`.trim(),
         importConfidence: String(t.confidence ?? categorization.confidence),
         month: t.date.substring(0, 7),
       };
     }));
 
     const inserted = await db.insert(transactionsTable).values(categorized).returning();
+    await matchTransferPairs(inserted, req.log);
     await rememberSavedMerchants(inserted, req.log, "import");
 
     res.json(
@@ -620,6 +734,91 @@ function serializeUploadedTransaction(t: typeof transactionsTable.$inferSelect) 
     importConfidence: parseFloat(t.importConfidence),
     createdAt: t.createdAt.toISOString(),
   };
+}
+
+async function matchTransferPairs(
+  inserted: Array<typeof transactionsTable.$inferSelect>,
+  log?: Request["log"],
+) {
+  const transfers = inserted.filter((transaction) => transaction.type === "transfer" && transaction.accountId !== null);
+  if (transfers.length === 0) return;
+
+  const minDate = shiftIsoDate(transfers.reduce((min, row) => row.date < min ? row.date : min, transfers[0].date), -2);
+  const maxDate = shiftIsoDate(transfers.reduce((max, row) => row.date > max ? row.date : max, transfers[0].date), 2);
+
+  const candidates = await db
+    .select()
+    .from(transactionsTable)
+    .where(and(
+      eq(transactionsTable.type, "transfer"),
+      gte(transactionsTable.date, minDate),
+      lte(transactionsTable.date, maxDate),
+    ));
+
+  const usedIds = new Set<number>();
+  for (const transfer of transfers) {
+    if (usedIds.has(transfer.id) || transfer.matchedTransferId || transfer.accountId === null) {
+      continue;
+    }
+
+    const match = candidates.find((candidate) =>
+      candidate.id !== transfer.id &&
+      !usedIds.has(candidate.id) &&
+      !candidate.matchedTransferId &&
+      candidate.accountId !== null &&
+      candidate.accountId !== transfer.accountId &&
+      candidate.direction !== transfer.direction &&
+      Math.abs(Number(candidate.amount) - Number(transfer.amount)) < 0.01 &&
+      Math.abs(daysBetween(candidate.date, transfer.date)) <= 2 &&
+      descriptionsLookLikeSameTransfer(transfer, candidate)
+    );
+
+    if (!match) continue;
+
+    const transferGroupId = `transfer-${crypto.randomUUID()}`;
+    await Promise.all([
+      db.update(transactionsTable)
+        .set({ transferGroupId, matchedTransferId: match.id })
+        .where(eq(transactionsTable.id, transfer.id)),
+      db.update(transactionsTable)
+        .set({ transferGroupId, matchedTransferId: transfer.id })
+        .where(eq(transactionsTable.id, match.id)),
+    ]);
+
+    usedIds.add(transfer.id);
+    usedIds.add(match.id);
+    log?.info({
+      transferGroupId,
+      leftId: transfer.id,
+      rightId: match.id,
+    }, "Matched transfer pair across accounts");
+  }
+}
+
+function descriptionsLookLikeSameTransfer(
+  left: Pick<typeof transactionsTable.$inferSelect, "description" | "merchant" | "transactionKind">,
+  right: Pick<typeof transactionsTable.$inferSelect, "description" | "merchant" | "transactionKind">,
+) {
+  if (left.transactionKind === "credit_card_payment" || right.transactionKind === "credit_card_payment") {
+    return true;
+  }
+
+  const leftText = normalizeForMatching(`${left.merchant} ${left.description}`);
+  const rightText = normalizeForMatching(`${right.merchant} ${right.description}`);
+  const keywords = ["kredi", "kart", "ekstre", "borc", "odeme", "virman", "havale", "eft", "fast", "atm"];
+  return keywords.some((keyword) => leftText.includes(keyword) && rightText.includes(keyword));
+}
+
+function shiftIsoDate(date: string, deltaDays: number) {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() + deltaDays);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function daysBetween(left: string, right: string) {
+  const leftTime = Date.parse(`${left}T00:00:00.000Z`);
+  const rightTime = Date.parse(`${right}T00:00:00.000Z`);
+  return Math.round((leftTime - rightTime) / 86_400_000);
 }
 
 async function rememberSavedMerchants(

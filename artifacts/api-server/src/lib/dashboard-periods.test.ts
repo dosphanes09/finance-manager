@@ -12,15 +12,17 @@ import {
 const fixedNow = new Date("2026-06-15T12:00:00Z");
 
 const transactions: DashboardTransactionLike[] = [
-  { date: "2026-01-05", amount: 1000, type: "credit", category: "income", merchant: "Salary" },
-  { date: "2026-01-08", amount: 120, type: "debit", category: "groceries", merchant: "Migros" },
-  { date: "2026-03-12", amount: 80, type: "debit", category: "transportation", merchant: "Obilet" },
-  { date: "2026-04-10", amount: 50, type: "debit", category: "subscriptions", merchant: "Spotify" },
-  { date: "2026-05-15", amount: 200, type: "debit", category: "groceries", merchant: "Migros" },
-  { date: "2026-06-20", amount: 300, type: "debit", category: "shopping", merchant: "Trendyol" },
-  { date: "2026-06-21", amount: 90, type: "debit", category: "Food & Dining", merchant: "Starbucks" },
-  { date: "2026-06-22", amount: 60, type: "debit", category: "food_dining", merchant: "Yemeksepeti" },
-  { date: "2025-12-29", amount: 500, type: "debit", category: "bills", merchant: "Utility" },
+  { date: "2026-01-05", amount: 1000, type: "income", direction: "credit", category: "income", merchant: "Salary" },
+  { date: "2026-01-08", amount: 120, type: "expense", direction: "debit", category: "groceries", merchant: "Migros" },
+  { date: "2026-03-12", amount: 80, type: "expense", direction: "debit", category: "transportation", merchant: "Obilet" },
+  { date: "2026-04-10", amount: 50, type: "expense", direction: "debit", category: "subscriptions", merchant: "Spotify" },
+  { date: "2026-05-15", amount: 200, type: "expense", direction: "debit", category: "groceries", merchant: "Migros" },
+  { date: "2026-06-15", amount: 1250, type: "transfer", direction: "debit", category: "other", merchant: "Credit Card Payment" },
+  { date: "2026-06-16", amount: 1250, type: "transfer", direction: "credit", category: "other", merchant: "Card Payment Received" },
+  { date: "2026-06-20", amount: 300, type: "expense", direction: "debit", category: "shopping", merchant: "Trendyol" },
+  { date: "2026-06-21", amount: 90, type: "expense", direction: "debit", category: "Food & Dining", merchant: "Starbucks" },
+  { date: "2026-06-22", amount: 60, type: "expense", direction: "debit", category: "food_dining", merchant: "Yemeksepeti" },
+  { date: "2025-12-29", amount: 500, type: "expense", direction: "debit", category: "bills", merchant: "Utility" },
 ];
 
 describe("dashboard periods", () => {
@@ -70,7 +72,7 @@ describe("dashboard periods", () => {
     );
   });
 
-  it("groups category totals across multiple months using debit transactions", () => {
+  it("groups category totals across multiple months using expense transactions", () => {
     const range = getDateRangeForPeriod("last_6_months", { now: fixedNow });
     const grouped = groupTransactionsByCategory(
       filterTransactionsByDateRange(transactions, range.startDate, range.endDate),
@@ -87,9 +89,9 @@ describe("dashboard periods", () => {
 
   it("normalizes legacy category labels before dashboard aggregation", () => {
     const grouped = groupTransactionsByCategory([
-      { date: "2026-06-01", amount: 100, type: "debit", category: "food", merchant: "Cafe" },
-      { date: "2026-06-02", amount: 50, type: "debit", category: "Food & Dining", merchant: "Restaurant" },
-      { date: "2026-06-03", amount: 25, type: "debit", category: "dining", merchant: "Bakery" },
+      { date: "2026-06-01", amount: 100, type: "expense", category: "food", merchant: "Cafe" },
+      { date: "2026-06-02", amount: 50, type: "expense", category: "Food & Dining", merchant: "Restaurant" },
+      { date: "2026-06-03", amount: 25, type: "expense", category: "dining", merchant: "Bakery" },
     ]);
 
     assert.deepEqual(grouped, [{ category: "food", amount: 175, count: 3, percentage: 100 }]);
@@ -108,5 +110,14 @@ describe("dashboard periods", () => {
       ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
     );
     assert.deepEqual(grouped[1], { month: "2026-02", expenses: 0, income: 0 });
+  });
+
+  it("excludes transfers from income and expense trends", () => {
+    const juneTransactions = filterTransactionsByDateRange(transactions, "2026-06-01", "2026-06-30");
+    const grouped = groupTransactionsByMonth(juneTransactions, "2026-06-01", "2026-06-30");
+    assert.deepEqual(grouped[0], { month: "2026-06", expenses: 450, income: 0 });
+
+    const categories = groupTransactionsByCategory(juneTransactions);
+    assert.equal(categories.some((row) => row.category === "other"), false);
   });
 });

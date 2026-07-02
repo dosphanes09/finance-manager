@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: transactions
     description: Transaction operations
+  - name: accounts
+    description: Financial account operations
   - name: upload
     description: Statement upload operations
   - name: dashboard
@@ -58,6 +60,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DatabaseHealthStatus"
+
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [accounts]
+      summary: List financial accounts
+      responses:
+        "200":
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountList"
+    post:
+      operationId: createAccount
+      tags: [accounts]
+      summary: Create a financial account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+      responses:
+        "201":
+          description: Created account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        "200":
+          description: Existing account with the same name and type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
 
   /upload:
     post:
@@ -148,6 +186,10 @@ paths:
           in: query
           schema:
             type: string
+        - name: accountId
+          in: query
+          schema:
+            type: integer
         - name: search
           in: query
           schema:
@@ -656,6 +698,48 @@ components:
           additionalProperties: true
       required: [error]
 
+    Account:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [checking, credit_card, cash, other]
+        currency:
+          type: string
+        institution:
+          type: ["string", "null"]
+        last4:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, name, type, currency, createdAt]
+
+    AccountList:
+      type: array
+      items:
+        $ref: "#/components/schemas/Account"
+
+    CreateAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [checking, credit_card, cash, other]
+        currency:
+          type: string
+          default: TRY
+        institution:
+          type: string
+        last4:
+          type: string
+      required: [name, type]
+
     Transaction:
       type: object
       properties:
@@ -669,12 +753,26 @@ components:
           type: string
         amount:
           type: number
+        accountId:
+          type: ["integer", "null"]
+        accountName:
+          type: ["string", "null"]
+        accountType:
+          type: ["string", "null"]
         type:
           type: string
+          enum: [income, expense, transfer, refund, debit, credit]
+        direction:
+          type: string
+          enum: [debit, credit]
         currency:
           type: string
         transactionKind:
           type: string
+        transferGroupId:
+          type: ["string", "null"]
+        matchedTransferId:
+          type: ["integer", "null"]
         bank:
           type: string
         parser:
@@ -699,7 +797,7 @@ components:
           type: boolean
         createdAt:
           type: string
-      required: [id, date, merchant, description, amount, type, currency, transactionKind, bank, balance, category, categorizationConfidence, categorizationSource, categorizationExplanation, importConfidence, month, reviewed, createdAt]
+      required: [id, date, merchant, description, amount, type, direction, currency, transactionKind, bank, balance, category, categorizationConfidence, categorizationSource, categorizationExplanation, importConfidence, month, reviewed, createdAt]
 
     TransactionList:
       type: object
@@ -769,8 +867,19 @@ components:
           type: string
         amount:
           type: number
+        accountId:
+          type: ["integer", "null"]
+        accountName:
+          type: ["string", "null"]
+        accountType:
+          type: string
+          enum: [checking, credit_card, cash, other]
         type:
           type: string
+          enum: [income, expense, transfer, refund, debit, credit]
+        direction:
+          type: string
+          enum: [debit, credit]
         currency:
           type: string
         transactionType:
@@ -798,7 +907,7 @@ components:
           type: string
         isDuplicate:
           type: boolean
-      required: [date, merchant, description, amount, type, currency, transactionType, transactionKind, balance, category, bank, parser, confidence, categorizationConfidence, categorizationSource, categorizationExplanation, month, isDuplicate]
+      required: [date, merchant, description, amount, accountId, accountName, accountType, type, direction, currency, transactionType, transactionKind, balance, category, bank, parser, confidence, categorizationConfidence, categorizationSource, categorizationExplanation, month, isDuplicate]
 
     PreviewResult:
       type: object

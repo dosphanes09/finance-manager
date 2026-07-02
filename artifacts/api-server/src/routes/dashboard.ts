@@ -10,6 +10,7 @@ import {
   getMonthDateRange,
   groupTransactionsByCategory,
   groupTransactionsByMonth,
+  isExpenseTransaction,
   roundMoney,
   type DashboardPeriod,
 } from "../lib/dashboard-periods";
@@ -62,7 +63,7 @@ function groupTopMerchants(transactions: DashboardTransaction[]) {
   const byMerchant = new Map<string, { amount: number; count: number }>();
 
   for (const transaction of transactions) {
-    if (transaction.type !== "debit") {
+    if (!isExpenseTransaction(transaction)) {
       continue;
     }
 
@@ -97,7 +98,7 @@ function buildCategoryMonthlyTrends(
   }
 
   for (const transaction of transactions) {
-    if (transaction.type !== "debit") {
+    if (!isExpenseTransaction(transaction)) {
       continue;
     }
 
@@ -124,7 +125,7 @@ function findRecurringPayments(transactions: DashboardTransaction[]) {
   const byMerchant = new Map<string, { total: number; months: Set<string>; count: number }>();
 
   for (const transaction of transactions) {
-    if (transaction.type !== "debit") {
+    if (!isExpenseTransaction(transaction)) {
       continue;
     }
 
@@ -183,7 +184,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
   const topCategory = categoryBreakdown.length > 0 ? categoryBreakdown[0].category : null;
   const recentRows = transactions.slice(0, 5);
   const biggestRows = transactions
-    .filter((transaction) => transaction.type === "debit")
+    .filter((transaction) => isExpenseTransaction(transaction))
     .sort((left, right) => getAmount(right) - getAmount(left))
     .slice(0, 5);
 

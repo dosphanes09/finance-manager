@@ -39,6 +39,45 @@ export const DatabaseHealthCheckResponse = zod.object({
 
 
 /**
+ * @summary List financial accounts
+ */
+export const ListAccountsResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['checking', 'credit_card', 'cash', 'other']),
+  "currency": zod.string(),
+  "institution": zod.string().nullish(),
+  "last4": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+export const ListAccountsResponse = zod.array(ListAccountsResponseItem)
+
+
+/**
+ * @summary Create a financial account
+ */
+export const createAccountBodyCurrencyDefault = `TRY`;
+
+export const CreateAccountBody = zod.object({
+  "name": zod.string(),
+  "type": zod.enum(['checking', 'credit_card', 'cash', 'other']),
+  "currency": zod.string().default(createAccountBodyCurrencyDefault),
+  "institution": zod.string().optional(),
+  "last4": zod.string().optional()
+})
+
+export const CreateAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "type": zod.enum(['checking', 'credit_card', 'cash', 'other']),
+  "currency": zod.string(),
+  "institution": zod.string().nullish(),
+  "last4": zod.string().nullish(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary Upload and parse a bank statement file (CSV, Excel, PDF)
  */
 export const UploadStatementResponse = zod.object({
@@ -49,9 +88,15 @@ export const UploadStatementResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),
@@ -78,7 +123,11 @@ export const PreviewStatementResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullable(),
+  "accountName": zod.string().nullable(),
+  "accountType": zod.enum(['checking', 'credit_card', 'cash', 'other']),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionType": zod.enum(['debit', 'credit']),
   "transactionKind": zod.string(),
@@ -107,7 +156,11 @@ export const ConfirmUploadBody = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullable(),
+  "accountName": zod.string().nullable(),
+  "accountType": zod.enum(['checking', 'credit_card', 'cash', 'other']),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionType": zod.enum(['debit', 'credit']),
   "transactionKind": zod.string(),
@@ -132,9 +185,15 @@ export const ConfirmUploadResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),
@@ -164,6 +223,7 @@ export const ListTransactionsQueryParams = zod.object({
   "merchant": zod.coerce.string().optional(),
   "needsReview": zod.coerce.boolean().optional(),
   "type": zod.coerce.string().optional(),
+  "accountId": zod.coerce.number().optional(),
   "search": zod.coerce.string().optional(),
   "sortBy": zod.enum(['date', 'amount', 'category', 'merchant']).optional(),
   "sortDir": zod.enum(['asc', 'desc']).optional(),
@@ -178,9 +238,15 @@ export const ListTransactionsResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),
@@ -250,9 +316,15 @@ export const UpdateTransactionResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),
@@ -331,9 +403,15 @@ export const GetDashboardResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),
@@ -353,9 +431,15 @@ export const GetDashboardResponse = zod.object({
   "merchant": zod.string(),
   "description": zod.string(),
   "amount": zod.number(),
-  "type": zod.string(),
+  "accountId": zod.number().nullish(),
+  "accountName": zod.string().nullish(),
+  "accountType": zod.string().nullish(),
+  "type": zod.enum(['income', 'expense', 'transfer', 'refund', 'debit', 'credit']),
+  "direction": zod.enum(['debit', 'credit']),
   "currency": zod.string(),
   "transactionKind": zod.string(),
+  "transferGroupId": zod.string().nullish(),
+  "matchedTransferId": zod.number().nullish(),
   "bank": zod.string(),
   "parser": zod.string().nullish(),
   "balance": zod.number().nullable(),

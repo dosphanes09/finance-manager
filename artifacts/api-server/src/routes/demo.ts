@@ -24,7 +24,8 @@ function generateDemoTransactions() {
     merchant: string;
     description: string;
     amount: string;
-    type: "debit" | "credit";
+    type: "income" | "expense";
+    direction: "debit" | "credit";
     category: string;
     month: string;
   }[] = [];
@@ -92,11 +93,11 @@ function generateDemoTransactions() {
 
   for (const month of months) {
     for (const s of salaries) {
-      rows.push({ ...s, date: randomDay(month, 1, 5), month });
+      rows.push({ ...s, type: "income", direction: s.type, date: randomDay(month, 1, 5), month });
     }
 
     for (const r of recurring) {
-      rows.push({ ...r, date: randomDay(month, 1, 7), month });
+      rows.push({ ...r, type: "expense", direction: r.type, date: randomDay(month, 1, 7), month });
     }
 
     for (const v of variable) {
@@ -108,7 +109,8 @@ function generateDemoTransactions() {
           merchant: v.merchant,
           description: v.description,
           amount: amount.toFixed(2),
-          type: v.type,
+          type: v.type === "credit" ? "income" : "expense",
+          direction: v.type,
           category: v.category,
           date: randomDay(month, 8, 28),
           month,

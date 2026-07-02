@@ -5,6 +5,8 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { TransactionDirection } from './transactionDirection';
+import type { TransactionType } from './transactionType';
 
 export interface Transaction {
   id: number;
@@ -12,9 +14,20 @@ export interface Transaction {
   merchant: string;
   description: string;
   amount: number;
-  type: string;
+  /** @nullable */
+  accountId?: number | null;
+  /** @nullable */
+  accountName?: string | null;
+  /** @nullable */
+  accountType?: string | null;
+  type: TransactionType;
+  direction: TransactionDirection;
   currency: string;
   transactionKind: string;
+  /** @nullable */
+  transferGroupId?: string | null;
+  /** @nullable */
+  matchedTransferId?: number | null;
   bank: string;
   /** @nullable */
   parser?: string | null;

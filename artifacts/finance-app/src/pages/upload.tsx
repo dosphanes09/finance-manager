@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2, AlertTriangle, X, Files } from "lucide-react";
-import { useListCategories } from "@workspace/api-client-react";
+import { Input } from "@/components/ui/input";
+import { UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2, AlertTriangle, X, Files, Building2, Plus } from "lucide-react";
+import { useCreateAccount, useListAccounts, useListCategories } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 
 type Step = "select" | "previewing" | "preview" | "importing" | "done";
@@ -17,7 +18,11 @@ interface PreviewTx {
   merchant: string;
   description: string;
   amount: number;
+  accountId: number | null;
+  accountName: string | null;
+  accountType: "checking" | "credit_card" | "cash" | "other";
   type: string;
+  direction: "debit" | "credit";
   currency: string;
   transactionType: "debit" | "credit";
   transactionKind: string;
@@ -53,6 +58,12 @@ interface BatchPreviewResponse {
 }
 
 const MAX_SELECTED_FILES = 20;
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: "checking", label: "Vadesiz / banka hesabı" },
+  { value: "credit_card", label: "Kredi kartı" },
+  { value: "cash", label: "Nakit" },
+  { value: "other", label: "Diğer" },
+] as const;
 
 function formatConfidence(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
@@ -98,6 +109,22 @@ function formatDirection(type: string) {
   return type;
 }
 
+function formatFinancialType(type: string) {
+  const labels: Record<string, string> = {
+    income: "gelir",
+    expense: "gider",
+    transfer: "transfer",
+    refund: "iade",
+    debit: "gider",
+    credit: "gelir",
+  };
+  return labels[type] ?? type;
+}
+
+function amountSign(direction: string) {
+  return direction === "credit" ? 1 : -1;
+}
+
 function confidenceClass(value: number) {
   if (value >= 0.9) return "text-emerald-600 border-emerald-300 bg-emerald-500/10";
   if (value >= 0.7) return "text-amber-600 border-amber-300 bg-amber-500/10";
@@ -120,10 +147,21 @@ export default function Upload() {
   const [result, setResult] = useState<{ count: number; skipped: number } | null>(null);
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [newAccountType, setNewAccountType] = useState<(typeof ACCOUNT_TYPE_OPTIONS)[number]["value"]>("credit_card");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { data: categories } = useListCategories();
+  const { data: accounts } = useListAccounts();
+  const createAccountMutation = useCreateAccount();
+
+  useEffect(() => {
+    if (!selectedAccountId && accounts?.length) {
+      setSelectedAccountId(String(accounts[0].id));
+    }
+  }, [accounts, selectedAccountId]);
 
   const reset = () => {
     setStep("select");
@@ -141,6 +179,11 @@ export default function Upload() {
   const handleFilesSelect = (selectedFiles: FileList | File[]) => {
     const nextFiles = Array.from(selectedFiles);
     if (nextFiles.length === 0) return;
+
+    if (!selectedAccountId) {
+      setError("Lütfen ekstre yüklemeden önce bir hesap seçin veya oluşturun.");
+      return;
+    }
 
     if (nextFiles.length > MAX_SELECTED_FILES) {
       setError(`Tek seferde en fazla ${MAX_SELECTED_FILES} dosya yükleyebilirsiniz.`);
@@ -160,6 +203,7 @@ export default function Upload() {
 
     const formData = new FormData();
     selectedFiles.forEach((selectedFile) => formData.append("files", selectedFile));
+    formData.append("accountId", selectedAccountId);
 
     try {
       const res = await fetch("/api/upload/preview-batch", { method: "POST", body: formData });
@@ -182,6 +226,27 @@ export default function Upload() {
       setError(msg);
       setStep("select");
     }
+  };
+
+  const handleCreateAccount = () => {
+    const name = newAccountName.trim();
+    if (!name) {
+      setError("Hesap adı girin.");
+      return;
+    }
+
+    createAccountMutation.mutate(
+      { data: { name, type: newAccountType, currency: "TRY" } },
+      {
+        onSuccess: (account) => {
+          setSelectedAccountId(String(account.id));
+          setNewAccountName("");
+          setError(null);
+          toast({ title: "Hesap oluşturuldu", description: `${account.name} seçildi.` });
+        },
+        onError: () => setError("Hesap oluşturulamadı."),
+      },
+    );
   };
 
   const handleConfirm = async () => {
@@ -228,6 +293,7 @@ export default function Upload() {
   const failedFileCount = fileSummaries.filter((file) => file.status === "failed").length;
   const showFileColumn = fileSummaries.length > 1;
   const selectedFileLabel = files.length === 1 ? files[0]?.name : `${files.length} dosya seçildi`;
+  const selectedAccount = accounts?.find((account) => String(account.id) === selectedAccountId);
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -247,6 +313,62 @@ export default function Upload() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-5 rounded-lg border bg-muted/20 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Bu dosyalar hangi hesaba ait?</p>
+                  <p className="text-xs text-muted-foreground">
+                    Kredi kartı ekstresi, banka hesabı hareketi veya nakit hesabı seçin. Transferler çift sayılmaz.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,240px)_auto]">
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Hesap seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(accounts ?? []).map((account) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {account.name} - {ACCOUNT_TYPE_OPTIONS.find((option) => option.value === account.type)?.label ?? account.type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={newAccountName}
+                  onChange={(event) => setNewAccountName(event.target.value)}
+                  placeholder="Yeni hesap adı"
+                />
+                <div className="flex gap-2">
+                  <Select value={newAccountType} onValueChange={(value) => setNewAccountType(value as typeof newAccountType)}>
+                    <SelectTrigger className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ACCOUNT_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCreateAccount}
+                    disabled={createAccountMutation.isPending}
+                  >
+                    <Plus className="mr-1.5 h-4 w-4" />
+                    Ekle
+                  </Button>
+                </div>
+              </div>
+              {selectedAccount && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Seçili hesap: {selectedAccount.name} ({ACCOUNT_TYPE_OPTIONS.find((option) => option.value === selectedAccount.type)?.label ?? selectedAccount.type})
+                </p>
+              )}
+            </div>
             <div
               className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center transition-colors cursor-pointer ${
                 isDragging ? "border-primary bg-primary/5" : "hover:bg-muted/40 bg-muted/20"
@@ -327,6 +449,7 @@ export default function Upload() {
               <p className="font-medium text-sm truncate">{selectedFileLabel}</p>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <Badge variant="outline">{preview.length} işlem okundu</Badge>
+                {selectedAccount && <Badge variant="outline">{selectedAccount.name}</Badge>}
                 <Badge variant="outline">{parsedFileCount}/{files.length} dosya başarılı</Badge>
                 {failedFileCount > 0 && (
                   <Badge variant="outline" className="text-rose-600 border-rose-400">
@@ -450,10 +573,12 @@ export default function Upload() {
                       <TableCell className="text-sm font-medium">{t.merchant}</TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
-                            {formatDirection(t.type)}
+                          <Badge variant="outline" className={`text-xs ${t.type === "transfer" ? "text-sky-600" : t.direction === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
+                            {formatFinancialType(t.type)}
                           </Badge>
-                          <div className="text-[11px] text-muted-foreground">{formatKind(t.transactionKind)}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {formatDirection(t.direction)} · {formatKind(t.transactionKind)}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -481,8 +606,8 @@ export default function Upload() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className={`text-right text-sm font-mono font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                        {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
+                      <TableCell className={`text-right text-sm font-mono font-medium ${t.direction === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                        {formatCurrency(t.amount * amountSign(t.direction), t.currency)}
                       </TableCell>
                     </TableRow>
                   ))}

@@ -1,6 +1,7 @@
-import { pgTable, text, serial, timestamp, numeric, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, boolean, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { accountsTable } from "./accounts";
 
 export const transactionsTable = pgTable("transactions", {
   id: serial("id").primaryKey(),
@@ -8,9 +9,13 @@ export const transactionsTable = pgTable("transactions", {
   merchant: text("merchant").notNull(),
   description: text("description").notNull(),
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  accountId: integer("account_id").references(() => accountsTable.id, { onDelete: "set null" }),
   type: text("type").notNull(),
+  direction: text("direction").notNull().default("debit"),
   currency: text("currency").notNull().default("TRY"),
   transactionKind: text("transaction_kind").notNull().default("other"),
+  transferGroupId: text("transfer_group_id"),
+  matchedTransferId: integer("matched_transfer_id"),
   bank: text("bank").notNull().default("generic"),
   parser: text("parser"),
   balance: numeric("balance", { precision: 12, scale: 2 }),

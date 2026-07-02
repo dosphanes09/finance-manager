@@ -14,6 +14,7 @@ category?: string;
 merchant?: string;
 needsReview?: boolean;
 type?: string;
+accountId?: number;
 search?: string;
 sortBy?: ListTransactionsSortBy;
 sortDir?: ListTransactionsSortDir;

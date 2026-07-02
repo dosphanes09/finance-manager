@@ -86,6 +86,10 @@ try {
     Invoke-SetupStep -Name "Apply local database schema" -Command {
       pnpm --filter "@workspace/db" run push
     }
+
+    Invoke-SetupStep -Name "Migrate account and transfer data" -Command {
+      pnpm --filter "@workspace/scripts" run migrate:accounts-transfers
+    }
   }
 
   if (-not $SkipBuild) {

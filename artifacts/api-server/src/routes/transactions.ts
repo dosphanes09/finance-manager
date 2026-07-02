@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, and, sql, inArray } from "drizzle-orm";
-import { db, transactionsTable } from "@workspace/db";
+import { accountsTable, db, transactionsTable } from "@workspace/db";
 import { normalizeCategoryId } from "@workspace/finance-categories";
 import { needsRuleReview } from "../lib/rule-suggestions";
 import { rememberMerchantsFromTransactions } from "../lib/merchant-memory";
@@ -20,9 +20,14 @@ import {
 
 const router: IRouter = Router();
 
-function serializeTransaction(t: typeof transactionsTable.$inferSelect) {
+function serializeTransaction(
+  t: typeof transactionsTable.$inferSelect,
+  account?: { name: string | null; type: string | null },
+) {
   return {
     ...t,
+    accountName: account?.name ?? null,
+    accountType: account?.type ?? null,
     category: normalizeCategoryId(t.category),
     amount: parseFloat(t.amount),
     balance: t.balance === null ? null : parseFloat(t.balance),
@@ -54,6 +59,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
     merchant,
     needsReview,
     type,
+    accountId,
     search,
     limit = 100,
     offset = 0,
@@ -66,6 +72,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
   if (category) conditions.push(eq(transactionsTable.category, normalizeCategoryId(category)));
   if (merchant) conditions.push(sql`${transactionsTable.merchant} ilike ${"%" + merchant + "%"}`);
   if (type) conditions.push(eq(transactionsTable.type, type));
+  if (accountId) conditions.push(eq(transactionsTable.accountId, accountId));
   if (search) {
     conditions.push(
       sql`(${transactionsTable.merchant} ilike ${"%" + search + "%"} or ${transactionsTable.description} ilike ${"%" + search + "%"})`
@@ -101,7 +108,7 @@ router.get("/transactions", async (req, res): Promise<void> => {
 
     res.json(
       ListTransactionsResponse.parse({
-        transactions: filtered.slice(offset, offset + limit).map(serializeTransaction),
+        transactions: filtered.slice(offset, offset + limit).map((row) => serializeTransaction(row)),
         total: filtered.length,
       })
     );
@@ -110,8 +117,13 @@ router.get("/transactions", async (req, res): Promise<void> => {
 
   const [rows, countRows] = await Promise.all([
     db
-      .select()
+      .select({
+        transaction: transactionsTable,
+        accountName: accountsTable.name,
+        accountType: accountsTable.type,
+      })
       .from(transactionsTable)
+      .leftJoin(accountsTable, eq(transactionsTable.accountId, accountsTable.id))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(orderBy)
       .limit(limit)
@@ -124,7 +136,10 @@ router.get("/transactions", async (req, res): Promise<void> => {
 
   res.json(
     ListTransactionsResponse.parse({
-      transactions: rows.map(serializeTransaction),
+      transactions: rows.map((row) => serializeTransaction(row.transaction, {
+        name: row.accountName,
+        type: row.accountType,
+      })),
       total: countRows[0]?.count ?? 0,
     })
   );

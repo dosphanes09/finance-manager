@@ -6,8 +6,8 @@ A full-stack personal finance analytics platform. Upload CSV, Excel, or PDF bank
 
 ## Features
 
-- **Upload** CSV / Excel (.xlsx/.xls) / PDF bank statements with a two-step preview flow (review before saving, duplicate detection)
-- **Dashboard** — flexible period KPIs, category totals and trends, top merchants bar chart, income vs expenses trend line, recent transactions, biggest expenses, recurring payment detection
+- **Upload** CSV / Excel (.xlsx/.xls) / PDF bank and credit card statements with account selection, a two-step preview flow, duplicate detection, and transfer-safe classification
+- **Dashboard** — flexible period KPIs, category totals and trends, top merchants bar chart, income vs expenses trend line, recent transactions, biggest expenses, recurring payment detection; transfers and refunds are excluded from income/expense totals by default
 - **Transactions** — sortable columns, search/filter, merchant + original description columns, inline category editing, quick review, bulk categorise/review, inline notes, Export CSV
 - **Budgets** — set monthly limits per category with real-time progress bars and over-budget warnings
 - **Insights** — financial health score, month-over-month comparison, recurring payments, savings opportunity tips
@@ -147,7 +147,15 @@ The `.local` folder is ignored by git and must not be committed.
 pnpm --filter @workspace/db run push
 ```
 
-This creates four core tables: `transactions`, `budgets`, `categorization_rules`, and `merchants`. The `transactions` table stores parser/categorization confidence metadata and a `reviewed` flag used by the Needs Review workflow. The `merchants` table is a persistent recognition memory so corrected or recognized merchants are reused on future imports.
+This creates the core tables: `accounts`, `transactions`, `budgets`, `categorization_rules`, and `merchants`. The `transactions` table stores account ownership, parser direction (`debit`/`credit`), financial type (`income`/`expense`/`transfer`/`refund`), parser/categorization confidence metadata, and a `reviewed` flag used by the Needs Review workflow. The `merchants` table is a persistent recognition memory so corrected or recognized merchants are reused on future imports.
+
+If you are upgrading an existing local database, also run:
+
+```bash
+pnpm --filter @workspace/scripts run migrate:accounts-transfers
+```
+
+This keeps existing transactions, assigns them to a legacy account when needed, preserves the original debit/credit direction, and reclassifies credit card payments, EFT/FAST/ATM/virman-style rows, and refunds so they do not distort dashboard income or expense totals.
 
 ### 5. Start the development servers
 
@@ -406,6 +414,16 @@ Edit `artifacts/api-server/src/lib/categorizer.ts` — add keywords to `CATEGORY
 
 Users can also add custom rules from the **Categories & Rules** page — these are applied before the built-in rules on every import.
 
+### Account-based imports and transfer handling
+
+- Before uploading statements, choose the account the file belongs to or create one from **Upload Statements**.
+- Supported account types are `checking`, `credit_card`, `cash`, and `other`.
+- Parser direction is stored separately as `direction = debit | credit`.
+- Financial transaction type is stored as `type = income | expense | transfer | refund`.
+- Credit card payments, card statement payments, EFT/FAST/virman transfers, and ATM cash movements are classified as `transfer` when deterministic Turkish text patterns match.
+- Transfers and refunds are excluded from Dashboard income/expense charts by default, preventing double counting when the same credit card payment appears in both a bank account statement and a credit card statement.
+- Matching transfer pairs are marked with `transferGroupId` / `matchedTransferId` when date, amount, direction, account, and description signals line up.
+
 ### Transaction categorization workflow
 
 - On **Transactions**, change the category directly in the table. The transaction is saved immediately and then asks whether to remember the categorization.
@@ -447,6 +465,7 @@ pnpm run typecheck
 | `pnpm --filter @workspace/api-server run dev` | Build + start API in dev mode |
 | `pnpm --filter @workspace/finance-app run dev` | Start Vite dev server |
 | `pnpm --filter @workspace/db run push` | Push Drizzle schema to the database |
+| `pnpm --filter @workspace/scripts run migrate:accounts-transfers` | Backfill account ownership and reclassify old debit/credit rows into income/expense/transfer/refund |
 | `pnpm --filter @workspace/api-spec run codegen` | Regenerate hooks + Zod schemas from OpenAPI spec |
 | `pnpm run typecheck` | Full typecheck across all packages |
 | `pnpm run typecheck:libs` | Typecheck shared libs only (faster during development) |

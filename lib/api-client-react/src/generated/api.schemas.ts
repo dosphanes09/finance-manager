@@ -43,15 +43,88 @@ export interface ErrorResponse {
   details?: ErrorResponseDetails;
 }
 
+export type AccountType = typeof AccountType[keyof typeof AccountType];
+
+
+export const AccountType = {
+  checking: 'checking',
+  credit_card: 'credit_card',
+  cash: 'cash',
+  other: 'other',
+} as const;
+
+export interface Account {
+  id: number;
+  name: string;
+  type: AccountType;
+  currency: string;
+  /** @nullable */
+  institution?: string | null;
+  /** @nullable */
+  last4?: string | null;
+  createdAt: string;
+}
+
+export type AccountList = Account[];
+
+export type CreateAccountRequestType = typeof CreateAccountRequestType[keyof typeof CreateAccountRequestType];
+
+
+export const CreateAccountRequestType = {
+  checking: 'checking',
+  credit_card: 'credit_card',
+  cash: 'cash',
+  other: 'other',
+} as const;
+
+export interface CreateAccountRequest {
+  name: string;
+  type: CreateAccountRequestType;
+  currency?: string;
+  institution?: string;
+  last4?: string;
+}
+
+export type TransactionType = typeof TransactionType[keyof typeof TransactionType];
+
+
+export const TransactionType = {
+  income: 'income',
+  expense: 'expense',
+  transfer: 'transfer',
+  refund: 'refund',
+  debit: 'debit',
+  credit: 'credit',
+} as const;
+
+export type TransactionDirection = typeof TransactionDirection[keyof typeof TransactionDirection];
+
+
+export const TransactionDirection = {
+  debit: 'debit',
+  credit: 'credit',
+} as const;
+
 export interface Transaction {
   id: number;
   date: string;
   merchant: string;
   description: string;
   amount: number;
-  type: string;
+  /** @nullable */
+  accountId?: number | null;
+  /** @nullable */
+  accountName?: string | null;
+  /** @nullable */
+  accountType?: string | null;
+  type: TransactionType;
+  direction: TransactionDirection;
   currency: string;
   transactionKind: string;
+  /** @nullable */
+  transferGroupId?: string | null;
+  /** @nullable */
+  matchedTransferId?: number | null;
   bank: string;
   /** @nullable */
   parser?: string | null;
@@ -98,6 +171,36 @@ export interface BulkReviewTransactionsResult {
   updated: number;
 }
 
+export type PreviewTransactionAccountType = typeof PreviewTransactionAccountType[keyof typeof PreviewTransactionAccountType];
+
+
+export const PreviewTransactionAccountType = {
+  checking: 'checking',
+  credit_card: 'credit_card',
+  cash: 'cash',
+  other: 'other',
+} as const;
+
+export type PreviewTransactionType = typeof PreviewTransactionType[keyof typeof PreviewTransactionType];
+
+
+export const PreviewTransactionType = {
+  income: 'income',
+  expense: 'expense',
+  transfer: 'transfer',
+  refund: 'refund',
+  debit: 'debit',
+  credit: 'credit',
+} as const;
+
+export type PreviewTransactionDirection = typeof PreviewTransactionDirection[keyof typeof PreviewTransactionDirection];
+
+
+export const PreviewTransactionDirection = {
+  debit: 'debit',
+  credit: 'credit',
+} as const;
+
 export type PreviewTransactionTransactionType = typeof PreviewTransactionTransactionType[keyof typeof PreviewTransactionTransactionType];
 
 
@@ -111,7 +214,13 @@ export interface PreviewTransaction {
   merchant: string;
   description: string;
   amount: number;
-  type: string;
+  /** @nullable */
+  accountId: number | null;
+  /** @nullable */
+  accountName: string | null;
+  accountType: PreviewTransactionAccountType;
+  type: PreviewTransactionType;
+  direction: PreviewTransactionDirection;
   currency: string;
   transactionType: PreviewTransactionTransactionType;
   transactionKind: string;
@@ -318,6 +427,7 @@ category?: string;
 merchant?: string;
 needsReview?: boolean;
 type?: string;
+accountId?: number;
 search?: string;
 sortBy?: ListTransactionsSortBy;
 sortDir?: ListTransactionsSortDir;

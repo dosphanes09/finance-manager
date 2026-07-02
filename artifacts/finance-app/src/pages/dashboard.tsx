@@ -81,6 +81,11 @@ function getStoredPeriod() {
   return DEFAULT_DASHBOARD_PERIOD;
 }
 
+function getDirection(transaction: { type: string; direction?: string | null }) {
+  if (transaction.direction === "credit" || transaction.direction === "debit") return transaction.direction;
+  return transaction.type === "credit" || transaction.type === "income" ? "credit" : "debit";
+}
+
 function SummaryCard({ title, amount, icon, isCurrency = false, subtitle }: {
   title: string; amount: number; icon: React.ReactNode; isCurrency?: boolean; subtitle?: string;
 }) {
@@ -380,8 +385,8 @@ export default function Dashboard() {
                       <p className="text-sm font-medium truncate">{t.merchant}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(t.date)}</p>
                     </div>
-                    <span className={`text-sm font-mono font-medium ml-3 shrink-0 ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                      {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
+                    <span className={`text-sm font-mono font-medium ml-3 shrink-0 ${getDirection(t) === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                      {formatCurrency(getDirection(t) === "credit" ? t.amount : -t.amount, t.currency)}
                     </span>
                   </div>
                 ))}

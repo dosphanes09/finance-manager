@@ -31,8 +31,8 @@ router.get("/insights", async (req, res): Promise<void> => {
     db
       .select({
         category: transactionsTable.category,
-        expenses: sql<number>`coalesce(sum(case when type = 'debit' then amount::numeric else 0 end), 0)`,
-        income: sql<number>`coalesce(sum(case when type = 'credit' then amount::numeric else 0 end), 0)`,
+        expenses: sql<number>`coalesce(sum(case when type in ('expense', 'debit') then amount::numeric else 0 end), 0)`,
+        income: sql<number>`coalesce(sum(case when type in ('income', 'credit') then amount::numeric else 0 end), 0)`,
       })
       .from(transactionsTable)
       .where(eq(transactionsTable.month, month!))
@@ -41,7 +41,7 @@ router.get("/insights", async (req, res): Promise<void> => {
     db
       .select({
         category: transactionsTable.category,
-        expenses: sql<number>`coalesce(sum(case when type = 'debit' then amount::numeric else 0 end), 0)`,
+        expenses: sql<number>`coalesce(sum(case when type in ('expense', 'debit') then amount::numeric else 0 end), 0)`,
       })
       .from(transactionsTable)
       .where(eq(transactionsTable.month, prevMonth))
@@ -50,14 +50,14 @@ router.get("/insights", async (req, res): Promise<void> => {
     db
       .select({
         merchant: transactionsTable.merchant,
-        amount: sql<number>`round(avg(case when type = 'debit' then amount::numeric else null end), 2)`,
+        amount: sql<number>`round(avg(case when type in ('expense', 'debit') then amount::numeric else null end), 2)`,
         count: sql<number>`count(distinct month)::int`,
       })
       .from(transactionsTable)
-      .where(sql`month >= ${getSixMonthsAgo(month!)} and type = 'debit'`)
+      .where(sql`month >= ${getSixMonthsAgo(month!)} and type in ('expense', 'debit')`)
       .groupBy(transactionsTable.merchant)
       .having(sql`count(distinct month) >= 3`)
-      .orderBy(sql`round(avg(case when type = 'debit' then amount::numeric else null end), 2) desc`)
+      .orderBy(sql`round(avg(case when type in ('expense', 'debit') then amount::numeric else null end), 2) desc`)
       .limit(10),
   ]);
 
@@ -124,13 +124,13 @@ async function getUnusualMerchants(
   const currentMerchants = await db
     .select({
       merchant: transactionsTable.merchant,
-      amount: sql<number>`sum(case when type = 'debit' then amount::numeric else 0 end)`,
+      amount: sql<number>`sum(case when type in ('expense', 'debit') then amount::numeric else 0 end)`,
       count: sql<number>`count(*)::int`,
     })
     .from(transactionsTable)
     .where(eq(transactionsTable.month, currentMonth))
     .groupBy(transactionsTable.merchant)
-    .orderBy(sql`sum(case when type = 'debit' then amount::numeric else 0 end) desc`)
+    .orderBy(sql`sum(case when type in ('expense', 'debit') then amount::numeric else 0 end) desc`)
     .limit(20);
 
   const prevMerchantsResult = await db

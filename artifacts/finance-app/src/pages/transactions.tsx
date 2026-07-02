@@ -81,9 +81,37 @@ function formatMetadata(value: string) {
 }
 
 function formatDirection(type: string) {
-  if (type === "credit") return "gelir";
-  if (type === "debit") return "gider";
+  if (type === "credit") return "giriş";
+  if (type === "debit") return "çıkış";
   return type;
+}
+
+function formatFinancialType(type: string) {
+  const labels: Record<string, string> = {
+    income: "gelir",
+    expense: "gider",
+    transfer: "transfer",
+    refund: "iade",
+    debit: "gider",
+    credit: "gelir",
+  };
+  return labels[type] ?? type;
+}
+
+function getDirection(transaction: Pick<Transaction, "type"> & { direction?: string | null }) {
+  if (transaction.direction === "credit" || transaction.direction === "debit") return transaction.direction;
+  return transaction.type === "credit" ? "credit" : "debit";
+}
+
+function amountSign(direction: string) {
+  return direction === "credit" ? 1 : -1;
+}
+
+function typeBadgeClass(type: string, direction: string) {
+  if (type === "transfer") return "text-sky-600 bg-sky-500/10 border-sky-300";
+  if (type === "refund") return "text-amber-600 bg-amber-500/10 border-amber-300";
+  if (direction === "credit") return "text-emerald-600 bg-emerald-500/10 border-emerald-300";
+  return "text-rose-600 bg-rose-500/10 border-rose-300";
 }
 
 export default function Transactions() {
@@ -342,10 +370,10 @@ export default function Transactions() {
 
   const handleExportCsv = () => {
     if (!data?.transactions.length) return;
-    const headers = ["Tarih", "İş Yeri", "Açıklama", "Tür", "İşlem Türü", "Kategori", "Güven", "Kategori Kaynağı", "Tutar", "Notlar"];
+    const headers = ["Tarih", "Hesap", "İş Yeri", "Açıklama", "Finansal Tür", "Yön", "İşlem Türü", "Kategori", "Güven", "Kategori Kaynağı", "Tutar", "Notlar"];
     const rows = data.transactions.map((t) => [
-      t.date, t.merchant, `"${t.description.replace(/"/g, '""')}"`,
-      t.type, t.transactionKind, t.category, t.categorizationConfidence, t.categorizationSource, t.amount, t.notes ?? "",
+      t.date, t.accountName ?? "", t.merchant, `"${t.description.replace(/"/g, '""')}"`,
+      t.type, getDirection(t), t.transactionKind, t.category, t.categorizationConfidence, t.categorizationSource, t.amount, t.notes ?? "",
     ]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -527,8 +555,10 @@ export default function Transactions() {
             <SelectTrigger className="w-28"><SelectValue placeholder="Tür" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tüm türler</SelectItem>
-              <SelectItem value="debit">Gider</SelectItem>
-              <SelectItem value="credit">Gelir</SelectItem>
+              <SelectItem value="expense">Gider</SelectItem>
+              <SelectItem value="income">Gelir</SelectItem>
+              <SelectItem value="transfer">Transfer</SelectItem>
+              <SelectItem value="refund">İade</SelectItem>
             </SelectContent>
           </Select>
           <Select value={category} onValueChange={(value) => { setCategory(value); setSelected(new Set()); }}>
@@ -552,6 +582,7 @@ export default function Transactions() {
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("date")}>
                 <span className="flex items-center">Tarih <SortIcon column="date" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
+              <TableHead>Hesap</TableHead>
               <TableHead className="cursor-pointer select-none" onClick={() => handleSort("merchant")}>
                 <span className="flex items-center">İş yeri <SortIcon column="merchant" sortBy={sortBy} sortDir={sortDir} /></span>
               </TableHead>
@@ -571,11 +602,11 @@ export default function Transactions() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">Yükleniyor...</TableCell>
+                <TableCell colSpan={11} className="text-center py-10 text-muted-foreground">Yükleniyor...</TableCell>
               </TableRow>
             ) : transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">İşlem bulunamadı.</TableCell>
+                <TableCell colSpan={11} className="text-center py-10 text-muted-foreground">İşlem bulunamadı.</TableCell>
               </TableRow>
             ) : (
               transactions.map((t) => (
@@ -584,6 +615,11 @@ export default function Transactions() {
                     <Checkbox checked={selected.has(t.id)} onCheckedChange={() => toggleSelect(t.id)} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">{formatDate(t.date)}</TableCell>
+                  <TableCell>
+                    <div className="text-sm max-w-[140px] truncate" title={t.accountName ?? "Hesap belirtilmemiş"}>
+                      {t.accountName ?? "Hesapsız"}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium text-sm max-w-[160px] truncate" title={t.merchant}>
                       {t.merchant}
@@ -620,14 +656,16 @@ export default function Transactions() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className={`text-right font-mono text-sm font-medium ${t.type === "credit" ? "text-emerald-600" : ""}`}>
-                    {formatCurrency(t.type === "credit" ? t.amount : -t.amount, t.currency)}
+                  <TableCell className={`text-right font-mono text-sm font-medium ${getDirection(t) === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                    {formatCurrency(t.amount * amountSign(getDirection(t)), t.currency)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={`text-xs ${t.type === "credit" ? "text-emerald-600 bg-emerald-500/10 border-emerald-300" : "text-rose-600 bg-rose-500/10 border-rose-300"}`}>
-                      {formatDirection(t.type)}
+                    <Badge variant="outline" className={`text-xs ${typeBadgeClass(t.type, getDirection(t))}`}>
+                      {formatFinancialType(t.type)}
                     </Badge>
-                    <div className="text-[11px] text-muted-foreground mt-1">{formatMetadata(t.transactionKind)}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1">
+                      {formatDirection(getDirection(t))} · {formatMetadata(t.transactionKind)}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {editingNote?.id === t.id ? (
@@ -857,11 +895,9 @@ export default function Transactions() {
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Tutar</span>
-                  <span className={`font-mono font-medium ${currentReviewTransaction.type === "credit" ? "text-emerald-600" : ""}`}>
+                  <span className={`font-mono font-medium ${getDirection(currentReviewTransaction) === "credit" ? "text-emerald-600" : ""}`}>
                     {formatCurrency(
-                      currentReviewTransaction.type === "credit"
-                        ? currentReviewTransaction.amount
-                        : -currentReviewTransaction.amount,
+                      currentReviewTransaction.amount * amountSign(getDirection(currentReviewTransaction)),
                       currentReviewTransaction.currency,
                     )}
                   </span>
