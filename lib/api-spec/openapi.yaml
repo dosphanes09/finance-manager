@@ -761,7 +761,7 @@ components:
           type: ["string", "null"]
         type:
           type: string
-          enum: [income, expense, transfer, refund, debit, credit]
+          enum: [income, expense, transfer, credit_card_payment, refund, fee, unknown_review, debit, credit]
         direction:
           type: string
           enum: [debit, credit]
@@ -876,7 +876,7 @@ components:
           enum: [checking, credit_card, cash, other]
         type:
           type: string
-          enum: [income, expense, transfer, refund, debit, credit]
+          enum: [income, expense, transfer, credit_card_payment, refund, fee, unknown_review, debit, credit]
         direction:
           type: string
           enum: [debit, credit]
@@ -1039,6 +1039,22 @@ components:
           type: number
         netBalance:
           type: number
+        netCashFlow:
+          type: number
+        totalTransfers:
+          type: number
+        totalCreditCardPayments:
+          type: number
+        totalRefunds:
+          type: number
+        totalFees:
+          type: number
+        reviewNeededCount:
+          type: integer
+        accountBalances:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccountBalance"
         transactionCount:
           type: integer
         topCategory:
@@ -1071,7 +1087,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MerchantSummary"
-      required: [month, period, startDate, endDate, totalExpenses, totalIncome, netBalance, transactionCount, topCategory, categoryBreakdown, topMerchants, monthlyTrends, categoryMonthlyTrends, recentTransactions, biggestExpenses, recurringPayments]
+      required: [month, period, startDate, endDate, totalExpenses, totalIncome, netBalance, netCashFlow, totalTransfers, totalCreditCardPayments, totalRefunds, totalFees, reviewNeededCount, accountBalances, transactionCount, topCategory, categoryBreakdown, topMerchants, monthlyTrends, categoryMonthlyTrends, recentTransactions, biggestExpenses, recurringPayments]
+
+    AccountBalance:
+      type: object
+      properties:
+        accountId:
+          type: integer
+        accountName:
+          type: string
+        accountType:
+          type: string
+          enum: [checking, credit_card, cash, other]
+        currency:
+          type: string
+        balance:
+          type: number
+        source:
+          type: string
+          enum: [statement_balance, estimated_from_transactions, no_transactions]
+      required: [accountId, accountName, accountType, currency, balance, source]
 
     Category:
       type: object

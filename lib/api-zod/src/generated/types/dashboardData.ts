@@ -5,6 +5,7 @@
  * Personal Finance Tracker API
  * OpenAPI spec version: 0.1.0
  */
+import type { AccountBalance } from './accountBalance';
 import type { CategoryBreakdown } from './categoryBreakdown';
 import type { CategoryMonthlyTrend } from './categoryMonthlyTrend';
 import type { MerchantSummary } from './merchantSummary';
@@ -19,6 +20,13 @@ export interface DashboardData {
   totalExpenses: number;
   totalIncome: number;
   netBalance: number;
+  netCashFlow: number;
+  totalTransfers: number;
+  totalCreditCardPayments: number;
+  totalRefunds: number;
+  totalFees: number;
+  reviewNeededCount: number;
+  accountBalances: AccountBalance[];
   transactionCount: number;
   /** @nullable */
   topCategory: string | null;

@@ -42,6 +42,7 @@ import {
   normalizeAccountType,
   normalizeDirection,
   type AccountType,
+  type StatementType,
 } from "../lib/transaction-classification";
 import { normalizeForMatching } from "../lib/statement-parsers/text-utils";
 
@@ -135,7 +136,7 @@ function parseErrorPayload(err: unknown, fallback: string) {
     };
   }
 
-  if (err instanceof Error && (err.message.includes("account") || err.message.includes("Account"))) {
+  if (err instanceof Error && (err.message.includes("account") || err.message.includes("Account") || err.message.includes("statement"))) {
     return { error: err.message };
   }
 
@@ -249,6 +250,15 @@ type ImportAccount = {
   type: AccountType;
 };
 
+function getStatementType(req: Request): StatementType {
+  const raw = Array.isArray(req.body?.statementType) ? req.body.statementType[0] : req.body?.statementType;
+  if (raw === "bank_account" || raw === "credit_card_statement") {
+    return raw;
+  }
+
+  throw new Error("Please select whether this file is a bank account movement file or a credit card statement.");
+}
+
 function duplicateKey(t: { date: string; description: string; amount: number; accountId: number | null }) {
   return `${t.accountId ?? "no-account"}|${t.date}|${normalizeForMatching(t.description)}|${t.amount.toFixed(2)}`;
 }
@@ -282,6 +292,7 @@ async function buildPreviewWithoutDuplicateFlags(
   file: Express.Multer.File,
   req: Request,
   account: ImportAccount,
+  statementType: StatementType,
 ): Promise<PreviewBuildResult> {
   const ext = validateUploadMetadata(file);
   const pdfOptions: PdfParseOptions = { debug: shouldDebugPdf(req, ext), logger: req.log };
@@ -305,6 +316,7 @@ async function buildPreviewWithoutDuplicateFlags(
     const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
     const classification = classifyFinancialTransaction({
       accountType: account.type,
+      statementType,
       direction: t.transactionType ?? t.type,
       transactionKind: t.transactionKind ?? "other",
       merchant: categorization.merchant,
@@ -389,7 +401,8 @@ router.post("/upload/preview", uploadRateLimit, statementUpload, async (req, res
 
   try {
     const account = await getImportAccount(req);
-    const previewBuild = await buildPreviewWithoutDuplicateFlags(file, req, account);
+    const statementType = getStatementType(req);
+    const previewBuild = await buildPreviewWithoutDuplicateFlags(file, req, account, statementType);
     const { preview, duplicateCount, errors } = await applyDuplicateFlags(previewBuild.transactions, req.log);
 
     res.json(
@@ -418,6 +431,8 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
   }
 
   try {
+    const account = await getImportAccount(req);
+    const statementType = getStatementType(req);
     const combined: PreviewCandidate[] = [];
     const fileResults: Array<{
       name: string;
@@ -433,8 +448,7 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
 
     for (const [index, file] of files.entries()) {
       try {
-        const account = await getImportAccount(req);
-        const parsed = await buildPreviewWithoutDuplicateFlags(file, req, account);
+        const parsed = await buildPreviewWithoutDuplicateFlags(file, req, account, statementType);
         const withSource = parsed.transactions.map((transaction) => ({
           ...transaction,
           sourceFile: file.originalname,
@@ -511,6 +525,9 @@ router.post("/upload/preview-batch", uploadRateLimit, statementBatchUpload, asyn
         file.skipReasons.map((reason) => ({ ...reason, fileName: file.name })),
       ),
     });
+  } catch (err) {
+    logParseFailure(req, err, "Failed to parse batch statement preview");
+    res.status(err instanceof UploadValidationError ? err.statusCode : 400).json(parseErrorPayload(err, "Failed to parse files. Please ensure they are valid bank statements."));
   } finally {
     await Promise.all(
       files.map((file) =>
@@ -553,6 +570,7 @@ router.post("/upload/confirm", async (req, res): Promise<void> => {
       const account = typeof t.accountId === "number" ? accountsById.get(t.accountId) : undefined;
       const classification = classifyFinancialTransaction({
         accountType: account?.type ?? t.accountType,
+        statementType: t.accountType === "credit_card" ? "credit_card_statement" : "bank_account",
         direction: t.direction ?? t.transactionType,
         transactionKind: t.transactionKind ?? "other",
         merchant: t.merchant,
@@ -622,6 +640,7 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
     }
 
     const account = await getImportAccount(req);
+    const statementType = getStatementType(req);
     const [customRules, merchantMemory] = await Promise.all([
       loadCustomRules(req.log),
       loadMerchantMemory(parsed),
@@ -634,6 +653,7 @@ router.post("/upload", uploadRateLimit, statementUpload, async (req, res): Promi
       const categorization = await categorizeForImport(sanitizedTransaction, customRules, merchantMemory);
       const classification = classifyFinancialTransaction({
         accountType: account.type,
+        statementType,
         direction: t.transactionType ?? t.type,
         transactionKind: t.transactionKind ?? "other",
         merchant: categorization.merchant,
@@ -790,7 +810,8 @@ async function matchTransferPairs(
   inserted: Array<typeof transactionsTable.$inferSelect>,
   log?: Request["log"],
 ) {
-  const transfers = inserted.filter((transaction) => transaction.type === "transfer" && transaction.accountId !== null);
+  const matchableTypes = ["transfer", "credit_card_payment"];
+  const transfers = inserted.filter((transaction) => matchableTypes.includes(transaction.type) && transaction.accountId !== null);
   if (transfers.length === 0) return;
 
   const minDate = shiftIsoDate(transfers.reduce((min, row) => row.date < min ? row.date : min, transfers[0].date), -2);
@@ -800,7 +821,7 @@ async function matchTransferPairs(
     .select()
     .from(transactionsTable)
     .where(and(
-      eq(transactionsTable.type, "transfer"),
+      inArray(transactionsTable.type, matchableTypes),
       gte(transactionsTable.date, minDate),
       lte(transactionsTable.date, maxDate),
     ));
@@ -855,7 +876,7 @@ function descriptionsLookLikeSameTransfer(
 
   const leftText = normalizeForMatching(`${left.merchant} ${left.description}`);
   const rightText = normalizeForMatching(`${right.merchant} ${right.description}`);
-  const keywords = ["kredi", "kart", "ekstre", "borc", "odeme", "virman", "havale", "eft", "fast", "atm"];
+  const keywords = ["kredi", "kart", "ekstre", "borc", "odeme", "tahsilat", "virman", "havale", "eft", "fast", "atm"];
   return keywords.some((keyword) => leftText.includes(keyword) && rightText.includes(keyword));
 }
 

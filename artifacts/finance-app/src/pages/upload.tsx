@@ -70,6 +70,11 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: "other", label: "Diğer" },
 ] as const;
 
+const STATEMENT_TYPE_OPTIONS = [
+  { value: "bank_account", label: "Banka hesap hareketleri" },
+  { value: "credit_card_statement", label: "Kredi kartÄ± ekstresi" },
+] as const;
+
 function formatConfidence(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 }
@@ -119,7 +124,10 @@ function formatFinancialType(type: string) {
     income: "gelir",
     expense: "gider",
     transfer: "transfer",
+    credit_card_payment: "kredi kartÄ± Ã¶demesi",
     refund: "iade",
+    fee: "Ã¼cret/komisyon",
+    unknown_review: "inceleme gerekli",
     debit: "gider",
     credit: "gelir",
   };
@@ -154,6 +162,7 @@ export default function Upload() {
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [statementType, setStatementType] = useState<(typeof STATEMENT_TYPE_OPTIONS)[number]["value"]>("credit_card_statement");
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountType, setNewAccountType] = useState<(typeof ACCOUNT_TYPE_OPTIONS)[number]["value"]>("credit_card");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -162,12 +171,21 @@ export default function Upload() {
   const { data: categories } = useListCategories();
   const { data: accounts } = useListAccounts();
   const createAccountMutation = useCreateAccount();
+  const selectedAccount = accounts?.find((account) => String(account.id) === selectedAccountId);
 
   useEffect(() => {
     if (!selectedAccountId && accounts?.length) {
       setSelectedAccountId(String(accounts[0].id));
     }
   }, [accounts, selectedAccountId]);
+
+  useEffect(() => {
+    if (selectedAccount?.type === "credit_card") {
+      setStatementType("credit_card_statement");
+    } else if (selectedAccount?.type === "checking" || selectedAccount?.type === "cash") {
+      setStatementType("bank_account");
+    }
+  }, [selectedAccount?.type]);
 
   const reset = () => {
     setStep("select");
@@ -192,6 +210,11 @@ export default function Upload() {
       return;
     }
 
+    if (!statementType) {
+      setError("Lütfen dosya türünü seçin.");
+      return;
+    }
+
     if (nextFiles.length > MAX_SELECTED_FILES) {
       setError(`Tek seferde en fazla ${MAX_SELECTED_FILES} dosya yükleyebilirsiniz.`);
       return;
@@ -211,6 +234,7 @@ export default function Upload() {
     const formData = new FormData();
     selectedFiles.forEach((selectedFile) => formData.append("files", selectedFile));
     formData.append("accountId", selectedAccountId);
+    formData.append("statementType", statementType);
 
     try {
       const res = await fetch("/api/upload/preview-batch", { method: "POST", body: formData });
@@ -301,8 +325,6 @@ export default function Upload() {
   const failedFileCount = fileSummaries.filter((file) => file.status === "failed").length;
   const showFileColumn = fileSummaries.length > 1;
   const selectedFileLabel = files.length === 1 ? files[0]?.name : `${files.length} dosya seçildi`;
-  const selectedAccount = accounts?.find((account) => String(account.id) === selectedAccountId);
-
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
@@ -376,6 +398,22 @@ export default function Upload() {
                   Seçili hesap: {selectedAccount.name} ({ACCOUNT_TYPE_OPTIONS.find((option) => option.value === selectedAccount.type)?.label ?? selectedAccount.type})
                 </p>
               )}
+              <div className="mt-4 grid gap-2 sm:grid-cols-[220px_1fr] sm:items-center">
+                <label className="text-sm font-medium">Dosya türü</label>
+                <Select value={statementType} onValueChange={(value) => setStatementType(value as typeof statementType)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Dosya türü seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATEMENT_TYPE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Kredi kartı ödemeleri ve hesaplar arası transferler gelir/gider toplamlarına dahil edilmez.
+              </p>
             </div>
             <div
               className={`border-2 border-dashed rounded-xl p-12 flex flex-col items-center justify-center transition-colors cursor-pointer ${
@@ -588,7 +626,15 @@ export default function Upload() {
                       <TableCell className="text-sm font-medium">{t.merchant}</TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <Badge variant="outline" className={`text-xs ${t.type === "transfer" ? "text-sky-600" : t.direction === "credit" ? "text-emerald-600" : "text-rose-600"}`}>
+                          <Badge variant="outline" className={`text-xs ${
+                            t.type === "transfer" || t.type === "credit_card_payment"
+                              ? "text-sky-600"
+                              : t.type === "fee" || t.type === "unknown_review"
+                                ? "text-amber-600"
+                                : t.direction === "credit"
+                                  ? "text-emerald-600"
+                                  : "text-rose-600"
+                          }`}>
                             {formatFinancialType(t.type)}
                           </Badge>
                           <div className="text-[11px] text-muted-foreground">
@@ -621,7 +667,7 @@ export default function Upload() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className={`text-right text-sm font-mono font-medium ${t.direction === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                      <TableCell className={`text-right text-sm font-mono font-medium ${t.type === "transfer" || t.type === "credit_card_payment" ? "text-sky-600" : t.direction === "credit" ? "text-emerald-600" : ""}`}>
                         {formatCurrency(t.amount * amountSign(t.direction), t.currency)}
                       </TableCell>
                     </TableRow>

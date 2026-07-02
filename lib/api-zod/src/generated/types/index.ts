@@ -7,6 +7,9 @@
  */
 
 export * from './account';
+export * from './accountBalance';
+export * from './accountBalanceAccountType';
+export * from './accountBalanceSource';
 export * from './accountList';
 export * from './accountType';
 export * from './applyRulesToSelectedTransactionsRequest';

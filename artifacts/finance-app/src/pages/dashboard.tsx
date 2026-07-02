@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowDownIcon, ArrowUpIcon, Wallet, Activity, RefreshCcw, TrendingDown, ArrowRight } from "lucide-react";
+import { AlertTriangle, ArrowDownIcon, ArrowUpIcon, Wallet, Activity, RefreshCcw, TrendingDown, ArrowRight, CreditCard, Repeat2, Landmark } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -111,6 +111,7 @@ export default function Dashboard() {
     getStoredValue(CUSTOM_START_STORAGE_KEY, getCurrentMonthStart()),
   );
   const [customEndDate, setCustomEndDate] = useState(() => getStoredValue(CUSTOM_END_STORAGE_KEY, getToday()));
+  const [includeTransfers, setIncludeTransfers] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
@@ -205,6 +206,15 @@ export default function Dashboard() {
               />
             </div>
           )}
+          <Button
+            type="button"
+            variant={includeTransfers ? "default" : "outline"}
+            onClick={() => setIncludeTransfers((current) => !current)}
+            className="gap-2"
+          >
+            <Repeat2 className="h-4 w-4" />
+            Transferler
+          </Button>
         </div>
       </div>
 
@@ -229,13 +239,57 @@ export default function Dashboard() {
         <>
           {/* KPI Row */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <SummaryCard title="Net Bakiye" amount={d.netBalance} icon={<Wallet className="h-4 w-4 text-primary" />} isCurrency
-              subtitle={d.netBalance >= 0 ? "Gelir giderden yüksek" : "Gider gelirden yüksek"} />
-            <SummaryCard title="Toplam Gelir" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency />
-            <SummaryCard title="Toplam Gider" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
+            <SummaryCard title="Net Nakit Akışı" amount={d.netCashFlow} icon={<Wallet className="h-4 w-4 text-primary" />} isCurrency
+              subtitle={d.netCashFlow >= 0 ? "Gerçek gelir - gerçek gider" : "Giderler gelirlerden yüksek"} />
+            <SummaryCard title="Gerçek Gelir" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency
+              subtitle="Transferler hariç" />
+            <SummaryCard title="Gerçek Gider" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
               subtitle={d.topCategory ? `En yüksek: ${getCategoryLabel(d.topCategory)}` : undefined} />
-            <SummaryCard title="İşlem Sayısı" amount={d.transactionCount} icon={<Activity className="h-4 w-4 text-muted-foreground" />} />
+            <SummaryCard title="İnceleme Gereken" amount={d.reviewNeededCount} icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
+              subtitle={`${d.transactionCount} toplam işlem`} />
           </div>
+
+          {includeTransfers && (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryCard title="Transferler" amount={d.totalTransfers} icon={<Repeat2 className="h-4 w-4 text-sky-500" />} isCurrency
+                subtitle="Gelir/gider dışı" />
+              <SummaryCard title="Kredi Kartı Ödemeleri" amount={d.totalCreditCardPayments} icon={<CreditCard className="h-4 w-4 text-sky-500" />} isCurrency
+                subtitle="Harcama toplamına dahil değil" />
+              <SummaryCard title="İadeler" amount={d.totalRefunds} icon={<RefreshCcw className="h-4 w-4 text-amber-500" />} isCurrency
+                subtitle="Giderleri azaltır" />
+              <SummaryCard title="Ücret ve Komisyonlar" amount={d.totalFees} icon={<Activity className="h-4 w-4 text-orange-500" />} isCurrency
+                subtitle="Gerçek giderlere dahil" />
+            </div>
+          )}
+
+          {d.accountBalances.length > 0 && (
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Landmark className="h-4 w-4 text-primary" />
+                  Hesap Bakiyeleri
+                </CardTitle>
+                <CardDescription>Her hesabın son ekstre bakiyesi veya işlem hareketlerinden tahmini bakiye.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {d.accountBalances.map((account) => (
+                    <div key={account.accountId} className="rounded-md border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{account.accountName}</p>
+                          <p className="text-xs text-muted-foreground">{account.accountType.replace(/_/g, " ")}</p>
+                        </div>
+                        <span className="shrink-0 font-mono text-sm font-semibold">
+                          {formatCurrency(account.balance, account.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Charts Row */}
           <div className="grid gap-6 md:grid-cols-2">
@@ -385,7 +439,7 @@ export default function Dashboard() {
                       <p className="text-sm font-medium truncate">{t.merchant}</p>
                       <p className="text-xs text-muted-foreground">{formatDate(t.date)}</p>
                     </div>
-                    <span className={`text-sm font-mono font-medium ml-3 shrink-0 ${getDirection(t) === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                    <span className={`text-sm font-mono font-medium ml-3 shrink-0 ${t.type === "transfer" || t.type === "credit_card_payment" ? "text-sky-600" : getDirection(t) === "credit" ? "text-emerald-600" : ""}`}>
                       {formatCurrency(getDirection(t) === "credit" ? t.amount : -t.amount, t.currency)}
                     </span>
                   </div>

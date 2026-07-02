@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, gte, lte } from "drizzle-orm";
-import { db, transactionsTable } from "@workspace/db";
+import { accountsTable, db, transactionsTable } from "@workspace/db";
 import { GetDashboardQueryParams, GetDashboardResponse } from "@workspace/api-zod";
 import { normalizeCategoryId } from "@workspace/finance-categories";
 import {
@@ -10,7 +10,12 @@ import {
   getMonthDateRange,
   groupTransactionsByCategory,
   groupTransactionsByMonth,
+  getExpenseImpact,
+  isCreditCardPaymentTransaction,
   isExpenseTransaction,
+  isRefundTransaction,
+  isReviewNeededTransaction,
+  isTransferTransaction,
   roundMoney,
   type DashboardPeriod,
 } from "../lib/dashboard-periods";
@@ -59,11 +64,15 @@ function getAmount(transaction: DashboardTransaction) {
   return Number(transaction.amount);
 }
 
+function getSignedAmount(transaction: DashboardTransaction) {
+  return transaction.direction === "credit" ? getAmount(transaction) : -getAmount(transaction);
+}
+
 function groupTopMerchants(transactions: DashboardTransaction[]) {
   const byMerchant = new Map<string, { amount: number; count: number }>();
 
   for (const transaction of transactions) {
-    if (!isExpenseTransaction(transaction)) {
+    if (getExpenseImpact(transaction) <= 0) {
       continue;
     }
 
@@ -98,7 +107,8 @@ function buildCategoryMonthlyTrends(
   }
 
   for (const transaction of transactions) {
-    if (!isExpenseTransaction(transaction)) {
+    const expenseImpact = getExpenseImpact(transaction);
+    if (expenseImpact === 0) {
       continue;
     }
 
@@ -109,7 +119,7 @@ function buildCategoryMonthlyTrends(
 
     const month = transaction.date.substring(0, 7);
     const key = `${category}|${month}`;
-    byCategoryMonth.set(key, (byCategoryMonth.get(key) ?? 0) + getAmount(transaction));
+    byCategoryMonth.set(key, (byCategoryMonth.get(key) ?? 0) + expenseImpact);
   }
 
   return categories.map((category) => ({
@@ -119,6 +129,88 @@ function buildCategoryMonthlyTrends(
       amount: roundMoney(byCategoryMonth.get(`${category}|${month}`) ?? 0),
     })),
   }));
+}
+
+function sumByType(transactions: DashboardTransaction[], predicate: (transaction: DashboardTransaction) => boolean) {
+  return roundMoney(transactions.reduce((total, transaction) => {
+    return predicate(transaction) ? total + getAmount(transaction) : total;
+  }, 0));
+}
+
+function buildAccountBalances(
+  transactions: DashboardTransaction[],
+  accounts: Array<typeof accountsTable.$inferSelect>,
+) {
+  const byAccount = new Map<number, {
+    accountId: number;
+    accountName: string;
+    accountType: string;
+    currency: string;
+    balance: number;
+    source: "statement_balance" | "estimated_from_transactions" | "no_transactions";
+    latestDate: string;
+    latestId: number;
+  }>();
+
+  for (const account of accounts) {
+    byAccount.set(account.id, {
+      accountId: account.id,
+      accountName: account.name,
+      accountType: account.type,
+      currency: account.currency,
+      balance: 0,
+      source: "no_transactions",
+      latestDate: "",
+      latestId: 0,
+    });
+  }
+
+  for (const transaction of transactions) {
+    if (transaction.accountId === null) continue;
+
+    const existing = byAccount.get(transaction.accountId) ?? {
+      accountId: transaction.accountId,
+      accountName: "Unknown account",
+      accountType: "other",
+      currency: transaction.currency,
+      balance: 0,
+      source: "no_transactions" as const,
+      latestDate: "",
+      latestId: 0,
+    };
+
+    if (transaction.balance !== null) {
+      const isNewer =
+        transaction.date > existing.latestDate ||
+        (transaction.date === existing.latestDate && transaction.id > existing.latestId);
+      if (isNewer) {
+        existing.balance = Number(transaction.balance);
+        existing.source = "statement_balance";
+        existing.latestDate = transaction.date;
+        existing.latestId = transaction.id;
+      }
+    } else if (existing.source !== "statement_balance") {
+      existing.balance += getSignedAmount(transaction);
+      existing.source = "estimated_from_transactions";
+      if (transaction.date > existing.latestDate || (transaction.date === existing.latestDate && transaction.id > existing.latestId)) {
+        existing.latestDate = transaction.date;
+        existing.latestId = transaction.id;
+      }
+    }
+
+    byAccount.set(transaction.accountId, existing);
+  }
+
+  return Array.from(byAccount.values())
+    .map((account) => ({
+      accountId: account.accountId,
+      accountName: account.accountName,
+      accountType: account.accountType,
+      currency: account.currency,
+      balance: roundMoney(account.balance),
+      source: account.source,
+    }))
+    .sort((left, right) => left.accountName.localeCompare(right.accountName));
 }
 
 function findRecurringPayments(transactions: DashboardTransaction[]) {
@@ -163,11 +255,14 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  const rows = await db
-    .select()
-    .from(transactionsTable)
-    .where(and(gte(transactionsTable.date, range.startDate), lte(transactionsTable.date, range.endDate)))
-    .orderBy(desc(transactionsTable.date), desc(transactionsTable.id));
+  const [rows, accounts] = await Promise.all([
+    db
+      .select()
+      .from(transactionsTable)
+      .where(and(gte(transactionsTable.date, range.startDate), lte(transactionsTable.date, range.endDate)))
+      .orderBy(desc(transactionsTable.date), desc(transactionsTable.id)),
+    db.select().from(accountsTable),
+  ]);
 
   const transactions = filterTransactionsByDateRange(rows, range.startDate, range.endDate);
   const monthlyTrends = groupTransactionsByMonth(transactions, range.startDate, range.endDate);
@@ -196,6 +291,13 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     totalExpenses: totalExpensesNum,
     totalIncome: totalIncomeNum,
     netBalance: roundMoney(totalIncomeNum - totalExpensesNum),
+    netCashFlow: roundMoney(totalIncomeNum - totalExpensesNum),
+    totalTransfers: sumByType(transactions, isTransferTransaction),
+    totalCreditCardPayments: sumByType(transactions, isCreditCardPaymentTransaction),
+    totalRefunds: sumByType(transactions, isRefundTransaction),
+    totalFees: sumByType(transactions, (transaction) => transaction.type === "fee"),
+    reviewNeededCount: transactions.filter(isReviewNeededTransaction).length,
+    accountBalances: buildAccountBalances(transactions, accounts),
     transactionCount: transactions.length,
     topCategory,
     categoryBreakdown,

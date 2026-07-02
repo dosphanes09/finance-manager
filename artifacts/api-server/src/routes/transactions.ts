@@ -95,16 +95,19 @@ router.get("/transactions", async (req, res): Promise<void> => {
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(orderBy);
 
-    const filtered = allRows.filter((row) => needsRuleReview({
-      id: row.id,
-      merchant: row.merchant,
-      description: row.description,
-      amount: row.amount,
-      type: row.type,
-      category: row.category,
-      reviewed: row.reviewed,
-      categorizationConfidence: row.categorizationConfidence,
-    }));
+    const filtered = allRows.filter((row) =>
+      row.type === "unknown_review" ||
+      needsRuleReview({
+        id: row.id,
+        merchant: row.merchant,
+        description: row.description,
+        amount: row.amount,
+        type: row.type,
+        category: row.category,
+        reviewed: row.reviewed,
+        categorizationConfidence: row.categorizationConfidence,
+      })
+    );
 
     res.json(
       ListTransactionsResponse.parse({

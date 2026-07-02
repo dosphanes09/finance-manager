@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { classifyFinancialTransaction } from "./transaction-classification";
 
 describe("transaction classification", () => {
-  it("classifies credit card payments as transfers instead of income", () => {
+  it("classifies credit card payment settlement lines outside income and expenses", () => {
     const result = classifyFinancialTransaction({
       accountType: "credit_card",
+      statementType: "credit_card_statement",
       direction: "credit",
       transactionKind: "credit_card_payment",
       merchant: "KREDI KARTI ODEMESI",
@@ -14,7 +15,7 @@ describe("transaction classification", () => {
       categorizationSource: "built_in",
     });
 
-    assert.equal(result.type, "transfer");
+    assert.equal(result.type, "credit_card_payment");
     assert.equal(result.direction, "credit");
     assert.equal(result.category, "other");
   });
@@ -22,6 +23,7 @@ describe("transaction classification", () => {
   it("classifies bank-side card payments as transfers instead of expenses", () => {
     const result = classifyFinancialTransaction({
       accountType: "checking",
+      statementType: "bank_account",
       direction: "debit",
       transactionKind: "other",
       merchant: "Kart Ödemesi",
@@ -30,7 +32,7 @@ describe("transaction classification", () => {
       categorizationSource: "built_in",
     });
 
-    assert.equal(result.type, "transfer");
+    assert.equal(result.type, "credit_card_payment");
     assert.equal(result.direction, "debit");
   });
 
@@ -45,8 +47,26 @@ describe("transaction classification", () => {
       categorizationSource: "built_in",
     });
 
-    assert.equal(result.type, "transfer");
+    assert.equal(result.type, "unknown_review");
     assert.equal(result.category, "other");
+  });
+
+  it("classifies fees as expenses and ATM movements as review-needed", () => {
+    assert.equal(classifyFinancialTransaction({
+      accountType: "checking",
+      direction: "debit",
+      transactionKind: "fee",
+      description: "BSMV tahsilati",
+      category: "other",
+    }).type, "fee");
+
+    assert.equal(classifyFinancialTransaction({
+      accountType: "checking",
+      direction: "debit",
+      transactionKind: "atm_withdrawal",
+      description: "ATM para cekme",
+      category: "other",
+    }).type, "unknown_review");
   });
 
   it("keeps salary as true income and refunds separate from income", () => {

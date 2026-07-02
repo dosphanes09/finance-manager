@@ -182,13 +182,8 @@ export function groupTransactionsByMonth<T extends DashboardTransactionLike>(
   for (const transaction of transactions) {
     const month = getMonthKey(transaction.date);
     const bucket = byMonth.get(month) ?? { month, expenses: 0, income: 0 };
-    const amount = Number(transaction.amount);
-
-    if (isIncomeTransaction(transaction)) {
-      bucket.income += amount;
-    } else if (isExpenseTransaction(transaction)) {
-      bucket.expenses += amount;
-    }
+    bucket.income += getIncomeImpact(transaction);
+    bucket.expenses += getExpenseImpact(transaction);
 
     byMonth.set(month, bucket);
   }
@@ -208,13 +203,14 @@ export function groupTransactionsByCategory<T extends DashboardTransactionLike>(
   const byCategory = new Map<string, { amount: number; count: number }>();
 
   for (const transaction of transactions) {
-    if (!isExpenseTransaction(transaction)) {
+    const expenseImpact = getExpenseImpact(transaction);
+    if (expenseImpact === 0) {
       continue;
     }
 
     const category = normalizeCategoryId(transaction.category);
     const current = byCategory.get(category) ?? { amount: 0, count: 0 };
-    current.amount += Number(transaction.amount);
+    current.amount += expenseImpact;
     current.count += 1;
     byCategory.set(category, current);
   }
@@ -240,5 +236,31 @@ export function isIncomeTransaction(transaction: Pick<DashboardTransactionLike, 
 }
 
 export function isExpenseTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
-  return transaction.type === "expense" || transaction.type === "debit";
+  return transaction.type === "expense" || transaction.type === "fee" || transaction.type === "debit";
+}
+
+export function isRefundTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "refund";
+}
+
+export function isTransferTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "transfer";
+}
+
+export function isCreditCardPaymentTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "credit_card_payment";
+}
+
+export function isReviewNeededTransaction(transaction: Pick<DashboardTransactionLike, "type">) {
+  return transaction.type === "unknown_review";
+}
+
+export function getIncomeImpact(transaction: Pick<DashboardTransactionLike, "type" | "amount">) {
+  return isIncomeTransaction(transaction) ? Number(transaction.amount) : 0;
+}
+
+export function getExpenseImpact(transaction: Pick<DashboardTransactionLike, "type" | "amount">) {
+  if (isExpenseTransaction(transaction)) return Number(transaction.amount);
+  if (isRefundTransaction(transaction)) return -Number(transaction.amount);
+  return 0;
 }

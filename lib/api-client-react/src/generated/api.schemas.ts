@@ -92,7 +92,10 @@ export const TransactionType = {
   income: 'income',
   expense: 'expense',
   transfer: 'transfer',
+  credit_card_payment: 'credit_card_payment',
   refund: 'refund',
+  fee: 'fee',
+  unknown_review: 'unknown_review',
   debit: 'debit',
   credit: 'credit',
 } as const;
@@ -188,7 +191,10 @@ export const PreviewTransactionType = {
   income: 'income',
   expense: 'expense',
   transfer: 'transfer',
+  credit_card_payment: 'credit_card_payment',
   refund: 'refund',
+  fee: 'fee',
+  unknown_review: 'unknown_review',
   debit: 'debit',
   credit: 'credit',
 } as const;
@@ -292,6 +298,34 @@ export interface CategoryMonthlyTrend {
   months: CategoryTrendMonth[];
 }
 
+export type AccountBalanceAccountType = typeof AccountBalanceAccountType[keyof typeof AccountBalanceAccountType];
+
+
+export const AccountBalanceAccountType = {
+  checking: 'checking',
+  credit_card: 'credit_card',
+  cash: 'cash',
+  other: 'other',
+} as const;
+
+export type AccountBalanceSource = typeof AccountBalanceSource[keyof typeof AccountBalanceSource];
+
+
+export const AccountBalanceSource = {
+  statement_balance: 'statement_balance',
+  estimated_from_transactions: 'estimated_from_transactions',
+  no_transactions: 'no_transactions',
+} as const;
+
+export interface AccountBalance {
+  accountId: number;
+  accountName: string;
+  accountType: AccountBalanceAccountType;
+  currency: string;
+  balance: number;
+  source: AccountBalanceSource;
+}
+
 export interface DashboardData {
   month: string;
   period: string;
@@ -300,6 +334,13 @@ export interface DashboardData {
   totalExpenses: number;
   totalIncome: number;
   netBalance: number;
+  netCashFlow: number;
+  totalTransfers: number;
+  totalCreditCardPayments: number;
+  totalRefunds: number;
+  totalFees: number;
+  reviewNeededCount: number;
+  accountBalances: AccountBalance[];
   transactionCount: number;
   /** @nullable */
   topCategory: string | null;

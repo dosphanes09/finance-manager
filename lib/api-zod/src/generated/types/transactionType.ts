@@ -13,7 +13,10 @@ export const TransactionType = {
   income: 'income',
   expense: 'expense',
   transfer: 'transfer',
+  credit_card_payment: 'credit_card_payment',
   refund: 'refund',
+  fee: 'fee',
+  unknown_review: 'unknown_review',
   debit: 'debit',
   credit: 'credit',
 } as const;

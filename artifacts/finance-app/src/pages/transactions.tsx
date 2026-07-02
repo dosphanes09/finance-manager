@@ -91,7 +91,10 @@ function formatFinancialType(type: string) {
     income: "gelir",
     expense: "gider",
     transfer: "transfer",
+    credit_card_payment: "kredi kartı ödemesi",
     refund: "iade",
+    fee: "ücret/komisyon",
+    unknown_review: "inceleme gerekli",
     debit: "gider",
     credit: "gelir",
   };
@@ -108,7 +111,9 @@ function amountSign(direction: string) {
 }
 
 function typeBadgeClass(type: string, direction: string) {
-  if (type === "transfer") return "text-sky-600 bg-sky-500/10 border-sky-300";
+  if (type === "transfer" || type === "credit_card_payment") return "text-sky-600 bg-sky-500/10 border-sky-300";
+  if (type === "fee") return "text-orange-600 bg-orange-500/10 border-orange-300";
+  if (type === "unknown_review") return "text-amber-600 bg-amber-500/10 border-amber-300";
   if (type === "refund") return "text-amber-600 bg-amber-500/10 border-amber-300";
   if (direction === "credit") return "text-emerald-600 bg-emerald-500/10 border-emerald-300";
   return "text-rose-600 bg-rose-500/10 border-rose-300";
@@ -558,7 +563,10 @@ export default function Transactions() {
               <SelectItem value="expense">Gider</SelectItem>
               <SelectItem value="income">Gelir</SelectItem>
               <SelectItem value="transfer">Transfer</SelectItem>
+              <SelectItem value="credit_card_payment">Kredi kartı ödemesi</SelectItem>
               <SelectItem value="refund">İade</SelectItem>
+              <SelectItem value="fee">Ücret/komisyon</SelectItem>
+              <SelectItem value="unknown_review">İnceleme gerekli</SelectItem>
             </SelectContent>
           </Select>
           <Select value={category} onValueChange={(value) => { setCategory(value); setSelected(new Set()); }}>
@@ -656,7 +664,7 @@ export default function Transactions() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className={`text-right font-mono text-sm font-medium ${getDirection(t) === "credit" ? "text-emerald-600" : t.type === "transfer" ? "text-sky-600" : ""}`}>
+                  <TableCell className={`text-right font-mono text-sm font-medium ${t.type === "transfer" || t.type === "credit_card_payment" ? "text-sky-600" : getDirection(t) === "credit" ? "text-emerald-600" : ""}`}>
                     {formatCurrency(t.amount * amountSign(getDirection(t)), t.currency)}
                   </TableCell>
                   <TableCell>

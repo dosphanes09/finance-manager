@@ -17,11 +17,15 @@ const transactions: DashboardTransactionLike[] = [
   { date: "2026-03-12", amount: 80, type: "expense", direction: "debit", category: "transportation", merchant: "Obilet" },
   { date: "2026-04-10", amount: 50, type: "expense", direction: "debit", category: "subscriptions", merchant: "Spotify" },
   { date: "2026-05-15", amount: 200, type: "expense", direction: "debit", category: "groceries", merchant: "Migros" },
-  { date: "2026-06-15", amount: 1250, type: "transfer", direction: "debit", category: "other", merchant: "Credit Card Payment" },
-  { date: "2026-06-16", amount: 1250, type: "transfer", direction: "credit", category: "other", merchant: "Card Payment Received" },
+  { date: "2026-06-15", amount: 1250, type: "credit_card_payment", direction: "debit", category: "other", merchant: "Credit Card Payment" },
+  { date: "2026-06-16", amount: 1250, type: "credit_card_payment", direction: "credit", category: "other", merchant: "Card Payment Received" },
+  { date: "2026-06-17", amount: 400, type: "transfer", direction: "debit", category: "other", merchant: "Bank Transfer" },
+  { date: "2026-06-18", amount: 700, type: "unknown_review", direction: "credit", category: "other", merchant: "FAST Incoming" },
   { date: "2026-06-20", amount: 300, type: "expense", direction: "debit", category: "shopping", merchant: "Trendyol" },
   { date: "2026-06-21", amount: 90, type: "expense", direction: "debit", category: "Food & Dining", merchant: "Starbucks" },
   { date: "2026-06-22", amount: 60, type: "expense", direction: "debit", category: "food_dining", merchant: "Yemeksepeti" },
+  { date: "2026-06-23", amount: 25, type: "fee", direction: "debit", category: "bills", merchant: "BSMV" },
+  { date: "2026-06-24", amount: 40, type: "refund", direction: "credit", category: "shopping", merchant: "Trendyol Refund" },
   { date: "2025-12-29", amount: 500, type: "expense", direction: "debit", category: "bills", merchant: "Utility" },
 ];
 
@@ -82,7 +86,7 @@ describe("dashboard periods", () => {
       category: "groceries",
       amount: 320,
       count: 2,
-      percentage: 35.6,
+      percentage: 36.2,
     });
     assert.equal(grouped.some((row) => row.category === "income"), false);
   });
@@ -112,12 +116,14 @@ describe("dashboard periods", () => {
     assert.deepEqual(grouped[1], { month: "2026-02", expenses: 0, income: 0 });
   });
 
-  it("excludes transfers from income and expense trends", () => {
+  it("excludes transfers and credit card payments while fees and refunds affect expenses", () => {
     const juneTransactions = filterTransactionsByDateRange(transactions, "2026-06-01", "2026-06-30");
     const grouped = groupTransactionsByMonth(juneTransactions, "2026-06-01", "2026-06-30");
-    assert.deepEqual(grouped[0], { month: "2026-06", expenses: 450, income: 0 });
+    assert.deepEqual(grouped[0], { month: "2026-06", expenses: 435, income: 0 });
 
     const categories = groupTransactionsByCategory(juneTransactions);
     assert.equal(categories.some((row) => row.category === "other"), false);
+    assert.equal(categories.find((row) => row.category === "shopping")?.amount, 260);
+    assert.equal(categories.find((row) => row.category === "bills")?.amount, 25);
   });
 });
