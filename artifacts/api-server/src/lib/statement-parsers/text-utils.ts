@@ -165,10 +165,29 @@ export function removeDatesAndAmounts(text: string): string {
 
 export function maskSensitiveData(text: string): string {
   return text
+    // IBAN, no separators (e.g. "TR330006100519786457841326")
     .replace(/\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b/g, "****")
+    // IBAN printed in the customary space-grouped format (e.g. "TR33 0006 1005 1978 6457 8413 26"),
+    // which the pattern above misses because it requires the digits to run together.
+    // The last group is 1-2 chars (26 chars total after "TR"), so it's optional/short.
+    .replace(/\bTR\d{2}(?:[ ]?[A-Z0-9]{4}){4,6}(?:[ ]?[A-Z0-9]{1,4})?\b/gi, "****")
     .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, "**** **** **** ****")
     .replace(/\b\d{8,12}\b/g, (m) => m.slice(0, 4) + "****")
     .replace(/IBAN[:\s]*[A-Z]{2}\d{2}[\w\s]{10,30}/gi, "IBAN: ****")
+    // Turkish bank exports often print the OTHER party's full name next to a
+    // "Gönderen" (sender) / "Alıcı" (recipient) / "Hesap Sahibi" (account holder) /
+    // "Ad Soyad(ı)" label on EFT/Havale rows. That name belongs to someone
+    // else, not the account holder, so it's masked even when the amount/date
+    // portion of the description is kept. Compound labels ("Alıcı Ad Soyadı")
+    // are listed before their standalone parts so the whole label is consumed
+    // and the actual name isn't left exposed after a partial match. This only
+    // catches the common labeled form real bank statements use — it is not
+    // general name detection and won't catch a name mentioned without one of
+    // these labels.
+    .replace(
+      /\b(g[oö]nderen ad\s*soyad[ıi]?|al[ıi]c[ıi] ad\s*soyad[ıi]?|hesap sahibi ad\s*soyad[ıi]?|ad[ıi]?\s*soyad[ıi]?|g[oö]nderen|al[ıi]c[ıi]|hesap sahibi)\s*:?\s*[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü]+){0,3}/giu,
+      (_match, label: string) => `${label}: ****`,
+    )
     .trim();
 }
 

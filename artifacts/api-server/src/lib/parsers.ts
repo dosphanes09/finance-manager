@@ -119,6 +119,14 @@ export class StatementParseError extends Error {
   }
 }
 
+// Some bank exports (and users who strip descriptions themselves before
+// uploading, for privacy) leave the description column entirely blank.
+// A blank description should not discard an otherwise valid, dated,
+// amounted transaction — that would silently drop real money movements
+// from every total and balance. Fall back to a clearly-labeled placeholder
+// instead of skipping the row.
+const REDACTED_DESCRIPTION_FALLBACK = "Banka hareketi (açıklama paylaşılmadı)";
+
 const DATE_PATTERN = /\b(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4})\b/g;
 const AMOUNT_PATTERN = /(?<![\p{L}\d.,/])[-+]?\s*(?:\u20ba\s*)?(?:\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.]\d{2})(?:\s*(?:TL|TRY|\u20ba))?(?![\d.,])/giu;
 const MAX_REPORTED_SKIP_REASONS = 25;
@@ -328,13 +336,12 @@ function normalizeRows(
       continue;
     }
 
+    // A blank description (e.g. a bank export with no narration column filled
+    // in, or a user who deliberately strips descriptions before uploading for
+    // privacy) must not discard an otherwise valid, dated, amounted
+    // transaction — see REDACTED_DESCRIPTION_FALLBACK above.
     const rawDesc = get(descKey);
-    if (!rawDesc) {
-      recordSkipped(diagnostics, rowNumber, "missing_description", stringifyRowSample(Object.values(row)));
-      continue;
-    }
-
-    const description = maskSensitiveData(rawDesc);
+    const description = maskSensitiveData(rawDesc || REDACTED_DESCRIPTION_FALLBACK);
     const normalizedMerchant = normalizeMerchant(description);
 
     let amount = 0;
@@ -486,17 +493,16 @@ function parseTurkishBankAccountExcelRows(
       continue;
     }
 
-    if (!descriptionRaw) {
-      recordSkipped(diagnostics, rowNumber, "missing_description", stringifyRowSample(row));
-      continue;
-    }
-
     if (!Number.isFinite(signedAmount) || signedAmount === 0) {
       recordSkipped(diagnostics, rowNumber, "missing_or_zero_amount", stringifyRowSample(row));
       continue;
     }
 
-    const description = maskSensitiveData(descriptionRaw);
+    // A blank description (e.g. a bank export with no narration column filled
+    // in, or a user who deliberately strips descriptions before uploading for
+    // privacy) must not discard an otherwise valid, dated, amounted
+    // transaction — see REDACTED_DESCRIPTION_FALLBACK above.
+    const description = maskSensitiveData(descriptionRaw || REDACTED_DESCRIPTION_FALLBACK);
     const normalizedMerchant = normalizeMerchant(description);
     const type = signedAmount < 0 ? "debit" : "credit";
     const transactionKind = inferTransactionKind(description, normalizedMerchant.merchant, type);
@@ -547,9 +553,13 @@ function detectTurkishBankAccountExcelLayout(rows: unknown[][]): TurkishBankAcco
     );
     const balanceIndex = normalizedHeaders.findIndex((header) => header.includes("bakiye"));
 
+    // A Fiş/Dekont/Referans (receipt) column is common but not universal across
+    // Turkish bank Excel exports — some banks omit it entirely. Requiring it
+    // caused real exports without that column to fall through to the generic,
+    // less reliable normalizeRows() path. Only the date/description/amount/
+    // balance columns are actually load-bearing for this layout.
     if (
       dateIndex >= 0 &&
-      receiptIndex >= 0 &&
       descriptionIndex >= 0 &&
       amountIndex >= 0 &&
       balanceIndex >= 0
@@ -557,7 +567,7 @@ function detectTurkishBankAccountExcelLayout(rows: unknown[][]): TurkishBankAcco
       return {
         headerRowIndex: rowIndex,
         dateIndex,
-        receiptIndex,
+        receiptIndex: receiptIndex >= 0 ? receiptIndex : null,
         descriptionIndex,
         amountIndex,
         balanceIndex,

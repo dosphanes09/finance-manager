@@ -817,14 +817,28 @@ async function matchTransferPairs(
   const minDate = shiftIsoDate(transfers.reduce((min, row) => row.date < min ? row.date : min, transfers[0].date), -2);
   const maxDate = shiftIsoDate(transfers.reduce((max, row) => row.date > max ? row.date : max, transfers[0].date), 2);
 
-  const candidates = await db
-    .select()
-    .from(transactionsTable)
-    .where(and(
-      inArray(transactionsTable.type, matchableTypes),
-      gte(transactionsTable.date, minDate),
-      lte(transactionsTable.date, maxDate),
-    ));
+  const [candidates, accountRows] = await Promise.all([
+    db
+      .select()
+      .from(transactionsTable)
+      .where(and(
+        inArray(transactionsTable.type, matchableTypes),
+        gte(transactionsTable.date, minDate),
+        lte(transactionsTable.date, maxDate),
+      )),
+    db.select({ id: accountsTable.id, type: accountsTable.type }).from(accountsTable),
+  ]);
+
+  // Two independent credit cards can each show their own "kredi kartı ödemesi"
+  // line in the same statement window with a coincidentally equal amount
+  // (e.g. two round-number card payments a day apart). Without knowing the
+  // account types, descriptionsLookLikeSameTransfer's credit_card_payment
+  // shortcut would treat that coincidence as one transfer between the user's
+  // own accounts and link them — which is wrong when both legs are credit
+  // cards, since a credit card can only be paid FROM another account, never
+  // "transfer" money to another credit card. Only allow the shortcut when at
+  // least one side isn't a credit card.
+  const accountTypeById = new Map(accountRows.map((account) => [account.id, normalizeAccountType(account.type)]));
 
   const usedIds = new Set<number>();
   for (const transfer of transfers) {
@@ -832,17 +846,29 @@ async function matchTransferPairs(
       continue;
     }
 
-    const match = candidates.find((candidate) =>
-      candidate.id !== transfer.id &&
-      !usedIds.has(candidate.id) &&
-      !candidate.matchedTransferId &&
-      candidate.accountId !== null &&
-      candidate.accountId !== transfer.accountId &&
-      candidate.direction !== transfer.direction &&
-      Math.abs(Number(candidate.amount) - Number(transfer.amount)) < 0.01 &&
-      Math.abs(daysBetween(candidate.date, transfer.date)) <= 2 &&
-      descriptionsLookLikeSameTransfer(transfer, candidate)
-    );
+    const transferAccountType = accountTypeById.get(transfer.accountId);
+
+    const match = candidates.find((candidate) => {
+      if (
+        candidate.id === transfer.id ||
+        usedIds.has(candidate.id) ||
+        candidate.matchedTransferId ||
+        candidate.accountId === null ||
+        candidate.accountId === transfer.accountId ||
+        candidate.direction === transfer.direction ||
+        Math.abs(Number(candidate.amount) - Number(transfer.amount)) >= 0.01 ||
+        Math.abs(daysBetween(candidate.date, transfer.date)) > 2
+      ) {
+        return false;
+      }
+
+      const candidateAccountType = accountTypeById.get(candidate.accountId);
+      if (transferAccountType === "credit_card" && candidateAccountType === "credit_card") {
+        return false;
+      }
+
+      return descriptionsLookLikeSameTransfer(transfer, candidate);
+    });
 
     if (!match) continue;
 

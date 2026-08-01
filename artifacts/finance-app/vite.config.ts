@@ -9,6 +9,12 @@ const isReplit = process.env.REPL_ID !== undefined;
 const port = Number(process.env.PORT ?? "5173");
 const basePath = process.env.BASE_PATH ?? "/";
 
+// The API behind this frontend has no login. Binding the dev server to
+// 0.0.0.0 makes it (and everything it can reach) visible to anyone on the
+// same Wi-Fi/LAN. Replit's sandbox needs 0.0.0.0 to route traffic in, but a
+// local machine should default to loopback-only unless HOST is set explicitly.
+const devHost = process.env.HOST ?? (isReplit ? "0.0.0.0" : "127.0.0.1");
+
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
 }
@@ -53,8 +59,8 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
-    host: "0.0.0.0",
-    allowedHosts: true,
+    host: devHost,
+    allowedHosts: isReplit ? true : undefined,
     fs: { strict: true },
     // Proxy /api to the Express server in local dev (on Replit the platform handles routing)
     proxy: isReplit
@@ -68,7 +74,7 @@ export default defineConfig({
   },
   preview: {
     port,
-    host: "0.0.0.0",
-    allowedHosts: true,
+    host: devHost,
+    allowedHosts: isReplit ? true : undefined,
   },
 });

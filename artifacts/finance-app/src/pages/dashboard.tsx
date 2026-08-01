@@ -240,21 +240,29 @@ export default function Dashboard() {
           {/* KPI Row */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard title="Net Nakit Akışı" amount={d.netCashFlow} icon={<Wallet className="h-4 w-4 text-primary" />} isCurrency
-              subtitle={d.netCashFlow >= 0 ? "Gerçek gelir - gerçek gider" : "Giderler gelirlerden yüksek"} />
+              subtitle={
+                d.totalIncome === 0
+                  ? "Henüz gelir işlemi yüklenmedi"
+                  : d.netCashFlow >= 0
+                    ? "Gerçek gelir - gerçek gider"
+                    : "Giderler gelirlerden yüksek"
+              } />
             <SummaryCard title="Gerçek Gelir" amount={d.totalIncome} icon={<ArrowUpIcon className="h-4 w-4 text-emerald-500" />} isCurrency
               subtitle="Transferler hariç" />
             <SummaryCard title="Gerçek Gider" amount={d.totalExpenses} icon={<ArrowDownIcon className="h-4 w-4 text-rose-500" />} isCurrency
               subtitle={d.topCategory ? `En yüksek: ${getCategoryLabel(d.topCategory)}` : undefined} />
             <SummaryCard title="İnceleme Gereken" amount={d.reviewNeededCount} icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
               subtitle={`${d.transactionCount} toplam işlem`} />
+            {d.totalCreditCardPayments > 0 && (
+              <SummaryCard title="Karta Yatırdığınız Tutar" amount={d.totalCreditCardPayments} icon={<CreditCard className="h-4 w-4 text-sky-500" />} isCurrency
+                subtitle="Kredi kartı borç ödemesi · gelir veya gider sayılmaz" />
+            )}
           </div>
 
           {includeTransfers && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <SummaryCard title="Transferler" amount={d.totalTransfers} icon={<Repeat2 className="h-4 w-4 text-sky-500" />} isCurrency
                 subtitle="Gelir/gider dışı" />
-              <SummaryCard title="Kredi Kartı Ödemeleri" amount={d.totalCreditCardPayments} icon={<CreditCard className="h-4 w-4 text-sky-500" />} isCurrency
-                subtitle="Harcama toplamına dahil değil" />
               <SummaryCard title="İadeler" amount={d.totalRefunds} icon={<RefreshCcw className="h-4 w-4 text-amber-500" />} isCurrency
                 subtitle="Giderleri azaltır" />
               <SummaryCard title="Ücret ve Komisyonlar" amount={d.totalFees} icon={<Activity className="h-4 w-4 text-orange-500" />} isCurrency

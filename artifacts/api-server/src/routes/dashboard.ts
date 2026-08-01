@@ -137,6 +137,13 @@ function sumByType(transactions: DashboardTransaction[], predicate: (transaction
   }, 0));
 }
 
+/**
+ * Computes each account's latest known balance. `transactions` must be the
+ * account's full, unfiltered history (not the dashboard's period-filtered
+ * set) — otherwise a narrow period (e.g. "this_month") can hide the most
+ * recent statement balance or make the estimated balance reflect only that
+ * period's net flow instead of the true running balance.
+ */
 function buildAccountBalances(
   transactions: DashboardTransaction[],
   accounts: Array<typeof accountsTable.$inferSelect>,
@@ -255,13 +262,20 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  const [rows, accounts] = await Promise.all([
+  const [rows, accounts, allTransactionsForBalances] = await Promise.all([
     db
       .select()
       .from(transactionsTable)
       .where(and(gte(transactionsTable.date, range.startDate), lte(transactionsTable.date, range.endDate)))
       .orderBy(desc(transactionsTable.date), desc(transactionsTable.id)),
     db.select().from(accountsTable),
+    // Account balances must reflect each account's full history, not the
+    // dashboard's selected period filter, so this is intentionally
+    // unfiltered by date range. See buildAccountBalances below.
+    db
+      .select()
+      .from(transactionsTable)
+      .orderBy(desc(transactionsTable.date), desc(transactionsTable.id)),
   ]);
 
   const transactions = filterTransactionsByDateRange(rows, range.startDate, range.endDate);
@@ -297,7 +311,7 @@ router.get("/dashboard", async (req, res): Promise<void> => {
     totalRefunds: sumByType(transactions, isRefundTransaction),
     totalFees: sumByType(transactions, (transaction) => transaction.type === "fee"),
     reviewNeededCount: transactions.filter(isReviewNeededTransaction).length,
-    accountBalances: buildAccountBalances(transactions, accounts),
+    accountBalances: buildAccountBalances(allTransactionsForBalances, accounts),
     transactionCount: transactions.length,
     topCategory,
     categoryBreakdown,
