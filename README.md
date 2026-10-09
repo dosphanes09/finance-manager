@@ -273,11 +273,13 @@ If Windows does not allow Scheduled Tasks for this user, the scripts create hidd
 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\FinanceAnalyzerPro-Api.vbs
 ```
 
-On this configured machine, the desktop shortcut is created at:
+The desktop shortcut is created on your Desktop, for example:
 
 ```text
-C:\Users\yagiz\OneDrive\Desktop\FinanceAnalyzerPro.lnk
+%USERPROFILE%\Desktop\FinanceAnalyzerPro.lnk
 ```
+
+(If your Desktop is synced with OneDrive, it is under `%USERPROFILE%\OneDrive\Desktop` instead.)
 
 ### Open the app
 
@@ -593,6 +595,10 @@ You can also generate 6 months of realistic demo data without uploading anything
 
 ---
 
-## License
+## Copyright / Telif Hakkı
 
-MIT
+© 2026 Yağız Ali Küçük. All rights reserved. / Tüm hakları saklıdır.
+
+This repository is publicly visible for reference only. No license is granted: the source code and content may not be copied, modified, distributed, or used in other projects without written permission.
+
+Bu depodaki kaynak kod ve içerik yalnızca incelenmek üzere herkese açık paylaşılmıştır. Yazılı izin olmadan kopyalanamaz, değiştirilemez, dağıtılamaz veya başka bir projede kullanılamaz.

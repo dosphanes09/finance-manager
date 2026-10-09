@@ -50,3 +50,11 @@ Thumbs.db
 .cache/
 .local/
 artifacts/api-server/uploads/
+
+# Local secrets in any folder. (artifacts/finance-app/.env is tracked on purpose:
+# it only holds the Vite PORT/BASE_PATH, and ignore rules do not affect tracked files.)
+.env
+.env.local
+
+# Local AI tool outputs / screenshots
+Claude outputs/
